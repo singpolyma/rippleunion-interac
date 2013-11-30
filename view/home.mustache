@@ -10,9 +10,15 @@
 	<body>
 		<h1><a href="//rippleunion.com"><img src="/assets/logo.png" alt="Ripple Union" /></a> Interac e-Transfers</h1>
 
-		<form method="get" action="">
-			{{{depositForm}}}
-			<button type="submit">Check</button>
-		</form>
+		<section>
+			<h1>Transfer to IOUs</h1>
+			<p>An automated service will verify your telephone number shortly after you submit this form.  In some cases, our staff may also call you to further verify your identity.</p>
+			<p>Please allow up to 2 business days for processing.</p>
+
+			<form method="post" action="">
+				{{{renderedDepositForm}}}
+				<button type="submit">Send</button>
+			</form>
+		</section>
 	</body>
 </html>
