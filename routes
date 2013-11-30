@@ -1,1 +1,2 @@
 GET / => home
+POST /deposits => processDeposit

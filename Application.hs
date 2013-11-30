@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Application (home) where
+module Application (home, processDeposit) where
 
 import Prelude ()
 import BasicPrelude
@@ -8,11 +8,13 @@ import Network.Wai (Application)
 import Network.HTTP.Types (ok200)
 import Network.Wai.Util (stringHeaders, textBuilder)
 
+import Network.Wai.Digestive (bodyFormEnv_)
 import SimpleForm.Combined (tel, label, Label(..), wdef, vdef)
 import SimpleForm.Render.XHTML5 (render)
-import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm)
+import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm)
 
 import Network.URI (URI(..))
+import Network.URI.Partial (relativeTo)
 
 import Records
 import MustacheTemplates
@@ -43,8 +45,17 @@ depositForm = do
 	return $ Deposit <$> fn' <*> email' <*> tel' <*> amount'
 
 home :: URI -> Application
-home _ _ = do
-	renderedForm <- getSimpleForm render Nothing depositForm
-	textBuilder ok200 headers $ viewHome htmlEscape (Home renderedForm)
+home root _ = do
+	rForm <- getSimpleForm render Nothing depositForm
+	textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
 	where
+	fPath = processDepositPath `relativeTo` root
+	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
+
+processDeposit :: URI -> Application
+processDeposit root req = do
+	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
+	textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
+	where
+	fPath = processDepositPath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
