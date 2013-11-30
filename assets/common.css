@@ -1,0 +1,72 @@
+html, body {
+	background-color: #abcdef;
+	font-family: "Liberation Sans", sans-serif;
+}
+
+body {
+	margin-left: 10%;
+	margin-right: 10%;
+	margin-top: 2em;
+}
+
+body > h1 {
+	overflow: hidden;
+}
+
+h1 * {
+	vertical-align: middle;
+}
+
+h1 img {
+	float: left;
+	padding-right: 5em;
+}
+
+.rippleAddress {
+	font-size: 0.5em;
+}
+
+a[rel=enclosure] img {
+	position: relative;
+	top: 4px;
+}
+
+section {
+	display: block;
+	width; 50%;
+	margin: auto;
+	margin-bottom: 2em;
+}
+
+section h1 {
+	font-size: 1.1em;
+}
+
+label {
+	display: block;
+}
+
+label > span {
+	display: inline-block;
+	width: 12%;
+}
+
+input {
+	margin-left: 0.2em;
+}
+
+fieldset {
+	padding: 0;
+	margin: 0;
+	border-width: 0;
+}
+
+fieldset > legend {
+	display: none;
+}
+
+label > .error {
+	display: inline;
+	margin-left: 0.2em;
+	color: #f00;
+}
