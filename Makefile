@@ -8,7 +8,7 @@ PathHelpers.hs: routes
 	routeGenerator -p -n 2 $< > $@
 
 MustacheTemplates.hs: Records.hs view/home.mustache
-	mustache2hs -m Records.hs view/home.mustache Home > $@
+	mustache2hs -m Records.hs view/home.mustache Home view/depositSuccess.mustache DepositSuccess> $@
 
 clean:
 	find -name '*.o' -o -name '*.hi' | xargs $(RM)

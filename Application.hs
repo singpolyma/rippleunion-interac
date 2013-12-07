@@ -57,7 +57,14 @@ home root _ _ = do
 processDeposit :: URI -> Connection -> Application
 processDeposit root db req = do
 	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
-	textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
+	liftIO $ case dep of
+		Just x -> do
+			execute db (s"INSERT INTO deposits VALUES (?,?,?,?)") x
+			textBuilder ok200 headers $ viewDepositSuccess htmlEscape
+				(DepositSuccess hPath)
+		Nothing ->
+			textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
 	where
 	fPath = processDepositPath `relativeTo` root
+	hPath = homePath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]

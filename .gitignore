@@ -5,3 +5,4 @@ Routes.hs
 *.hi
 *.swp
 Main
+*.sqlite3
