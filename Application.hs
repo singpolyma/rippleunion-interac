@@ -62,11 +62,15 @@ amountLimit = SFV.pmap go vdef
 
 depositForm :: (Functor m, MonadIO m) => SimpleForm' m Deposit
 depositForm = do
-	fn'     <- input (s"fn") (Just . depositorFN) (wdef,vdef) (mempty { label = lbl"Full name"})
+	fn'     <- input (s"fn") (Just . depositorFN) (wdef,vdef)
+		(mempty { label = lbl"Full name"})
 	email'  <- input_ (s"email") (Just . depositorEmail)
-	tel'    <- input  (s"tel") (Just . depositorTel) (tel,digits10) (mempty {label = lbl"Telephone number"})
-	ripple' <- input  (s"ripple") (Just . ShowRead . depositorRipple) (wdef,vdef) (mempty {label = lbl"Ripple address"})
-	amount' <- input (s"amount") (Just . depositAmount) (wdef,amountLimit) (mempty {label = lbl"Amount in CAD"})
+	tel'    <- input  (s"tel") (Just . depositorTel) (tel,digits10)
+		(mempty {label = lbl"Telephone number"})
+	ripple' <- input  (s"ripple") (Just . ShowRead . depositorRipple) (wdef,vdef)
+		(mempty {label = lbl"Ripple address"})
+	amount' <- input (s"amount") (Just . depositAmount) (wdef,amountLimit)
+		(mempty {label = lbl"Amount in CAD"})
 
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,999999)
 	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> fmap unShowRead ripple' <*> amount' <*> pure False
