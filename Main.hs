@@ -2,11 +2,11 @@ module Main (main) where
 
 import Prelude hiding (FilePath)
 import System.Environment (getArgs)
-import Network.URI (parseAbsoluteURI, URI(..))
-import Control.Error (headMay)
+import Network.URI (parseAbsoluteURI, URI(..), URIAuth(..))
 import System.IO (hPutStrLn, stderr)
 import Filesystem.Path.CurrentOS (FilePath)
 import Filesystem (getWorkingDirectory)
+import Database.SQLite.Simple (open)
 
 import Network.Wai (Application)
 import Network.Wai.Handler.Warp (run)
@@ -28,17 +28,24 @@ addTrailingSlash u@(URI {uriPath = p})
 staticRoot :: FilePath -> Application
 staticRoot = staticApp . defaultWebAppSettings
 
+app :: URI -> Int -> String -> IO ()
+app root port dbpth = do
+	cwd <- getWorkingDirectory
+	db <- open dbpth
+	run port $
+		logStdoutDev $ autohead $ acceptOverride $ jsonp $ -- Middleware
+		dispatch (staticRoot cwd) $ routes root db         -- Do routing
+
 main :: IO ()
 main = do
 	args <- getArgs
-	let root = fmap addTrailingSlash (parseAbsoluteURI =<< headMay args)
-	main' root args
+	case args of
+		[dbp, root] -> main' (fmap addTrailingSlash $ parseAbsoluteURI root) dbp
+		[dbp] -> main' (parseAbsoluteURI "http://localhost:3000/") dbp
+		_ -> hPutStrLn stderr "Usage: ./Main <db path> <Root URI>"
 	where
-	main' (Just root@(URI {uriAuthority = Just _})) (_:port:_) = do
-		cwd <- getWorkingDirectory
-		run (read port) $
-			logStdoutDev $ autohead $ acceptOverride $ jsonp $ -- Middleware
-			dispatch (staticRoot cwd) $ routes root            -- Do routing
-	main' root@(Just (URI {uriAuthority = Just _})) _ =
-		main' root [undefined,"3000"]
-	main' _ _ = hPutStrLn stderr "Usage: ./Main <Root URI> <port>"
+	main' (Just r@(URI {uriAuthority = Just (URIAuth {uriPort = ':':port})})) =
+		app r (read port)
+	main' (Just r@(URI {uriAuthority = Just (URIAuth {uriPort = ""})})) =
+		app r 80
+	main' _ = const $ hPutStrLn stderr "Invalid Root URI given"

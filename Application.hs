@@ -16,6 +16,8 @@ import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm,
 import Network.URI (URI(..))
 import Network.URI.Partial (relativeTo)
 
+import Database.SQLite.Simple (execute, Connection)
+
 import Records
 import MustacheTemplates
 #include "PathHelpers.hs"
@@ -44,16 +46,16 @@ depositForm = do
 
 	return $ Deposit <$> fn' <*> email' <*> tel' <*> amount'
 
-home :: URI -> Application
-home root _ = do
+home :: URI -> Connection -> Application
+home root _ _ = do
 	rForm <- getSimpleForm render Nothing depositForm
 	textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
 	where
 	fPath = processDepositPath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
 
-processDeposit :: URI -> Application
-processDeposit root req = do
+processDeposit :: URI -> Connection -> Application
+processDeposit root db req = do
 	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
 	textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
 	where
