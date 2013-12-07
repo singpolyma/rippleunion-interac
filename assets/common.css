@@ -65,8 +65,11 @@ fieldset > legend {
 	display: none;
 }
 
+.error {
+	color: #f00;
+}
+
 label > .error {
 	display: inline;
 	margin-left: 0.2em;
-	color: #f00;
 }

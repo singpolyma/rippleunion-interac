@@ -7,6 +7,7 @@ import System.IO (hPutStrLn, stderr)
 import Filesystem.Path.CurrentOS (FilePath)
 import Filesystem (getWorkingDirectory)
 import Database.SQLite.Simple (open)
+import OpenSSL (withOpenSSL)
 
 import Network.Wai (Application)
 import Network.Wai.Handler.Warp (run)
@@ -40,7 +41,7 @@ app root port dbpth pid ptk ptl = do
 	plivo = PlivoConfig pid ptk ptl
 
 main :: IO ()
-main = do
+main = withOpenSSL $ do
 	args <- getArgs
 	case args of
 		[dbp, pid, ptk, ptl, root] ->

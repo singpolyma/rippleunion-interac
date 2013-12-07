@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Application (home, processDeposit) where
+module Application (home, processDeposit, plivoDeposit, verifyDeposit) where
 
 import Prelude ()
 import BasicPrelude
@@ -15,11 +15,14 @@ import SimpleForm.Combined (tel, label, Label(..), wdef, vdef)
 import SimpleForm.Render.XHTML5 (render)
 import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm)
 import Text.Digestive.Form (monadic)
+import Text.Blaze (preEscapedToMarkup)
+
+import Plivo (callAPI, createOutboundCall)
 
 import Network.URI (URI(..))
 import Network.URI.Partial (relativeTo)
 
-import Database.SQLite.Simple (execute, Connection)
+import Database.SQLite.Simple (query, execute, Connection)
 
 import Records
 import MustacheTemplates
@@ -48,7 +51,13 @@ depositForm = do
 	amount' <- input_ (s"amount") (Just . depositAmount)
 
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,999999)
-	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> amount'
+	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> amount' <*> pure False
+
+plivoDepositForm :: (Monad m) => SimpleForm' m PlivoDeposit
+plivoDepositForm = do
+	code' <- input (s"code") (Just . plivoCode) (wdef,vdef) (mempty { label = lbl"Verification code"})
+
+	return $ PlivoDeposit <$> code'
 
 home :: URI -> Connection -> PlivoConfig -> Application
 home root _ _ _ = do
@@ -59,26 +68,64 @@ home root _ _ _ = do
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
 
 processDeposit :: URI -> Connection -> PlivoConfig -> Application
-processDeposit root db _ req = do
+processDeposit root db plivo req = do
 	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
 	liftIO $ case dep of
 		Just x -> do
-			insertDeposit db x
-			textBuilder ok200 headers $ viewDepositSuccess htmlEscape
-				(DepositSuccess hPath)
+			finalId <- insertDeposit db x
+			apiResult <- callAPI (plivoAuthId plivo) (plivoAuthToken plivo) $
+				createOutboundCall (plivoTel plivo) (textToString $ depositorTel x)
+					(plivoDepositPath finalId `relativeTo` root)
+
+			case apiResult of
+				Right _ -> do
+					vForm <- getSimpleForm render Nothing plivoDepositForm
+					textBuilder ok200 headers $ viewDepositVerify htmlEscape
+						(Home vForm vPath)
+				Left _ ->
+					textBuilder ok200 headers $ viewHome htmlEscape
+						(Home (preEscapedToMarkup "<p class='error'>Something went wrong trying to verify your telephone number: did you enter it correctly?</p>" ++ rForm) fPath)
 		Nothing ->
 			textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
 	where
+	vPath = verifyDepositPath `relativeTo` root
 	fPath = processDepositPath `relativeTo` root
+	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
+
+verifyDeposit :: URI -> Connection -> PlivoConfig -> Application
+verifyDeposit root db _ req = do
+	(vForm, dep) <- postSimpleForm render (bodyFormEnv_ req) plivoDepositForm
+	liftIO $ do
+		deps <- maybe (return [])
+			(query db (s"SELECT id,fn,email,tel,amount,complete FROM deposits WHERE id=? AND complete=0"))
+				(fmap ((:[]) . plivoCode) dep)
+		case deps of
+			(x:_) -> do
+				execute db (s"INSERT INTO verifications (item_id,item_table,verification_type) VALUES (?,?,?)")
+					(Verification x AutomatedPhoneVerification)
+				textBuilder ok200 headers $ viewDepositSuccess htmlEscape
+					(DepositSuccess [x] hPath)
+			[] ->
+				textBuilder ok200 headers $ viewDepositVerify htmlEscape
+					(Home (preEscapedToMarkup "<p class='error'>Invalid code</p>" ++ vForm) vPath)
+	where
+	vPath = verifyDepositPath `relativeTo` root
 	hPath = homePath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
 
+plivoDeposit :: URI -> Connection -> PlivoConfig -> Int64 -> Application
+plivoDeposit _ _ _ rid _ =
+	textBuilder ok200 headers $ viewPlivoDeposit htmlEscape (PlivoDeposit code)
+	where
+	code = intersperse ' ' $ shows rid ""
+	Just headers = stringHeaders [("Content-Type", "application/xml; charset=utf8")]
+
 -- | Increments id until success
-insertDeposit :: Connection -> Deposit -> IO ()
+insertDeposit :: Connection -> Deposit -> IO Int64
 insertDeposit db x = do
-	r <- try $ execute db (s"INSERT INTO deposits VALUES (?,?,?,?,?)") x
+	r <- try $ execute db (s"INSERT INTO deposits VALUES (?,?,?,?,?,?)") x
 	case r of
 		Left (SQLError ErrorConstraint _ _) ->
 			insertDeposit db (x {depositId = succ $ depositId x})
 		Left e -> throwIO e
-		Right () -> return ()
+		Right () -> return (depositId x)
