@@ -1,4 +1,4 @@
 GET / => home
 POST /deposits => processDeposit
 POST /deposits/verify => verifyDeposit
-GET /plivo/deposits/: => plivoDeposit
+POST /plivo/deposits/: => plivoDeposit
