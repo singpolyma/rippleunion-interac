@@ -7,7 +7,7 @@ Routes.hs: routes
 PathHelpers.hs: routes
 	routeGenerator -p -n 3 $< > $@
 
-MustacheTemplates.hs: Records.hs view/home.mustache
+MustacheTemplates.hs: Records.hs view/home.mustache view/depositSuccess.mustache view/plivoDeposit.mustache view/depositVerify.mustache
 	mustache2hs -m Records.hs view/home.mustache Home view/depositSuccess.mustache DepositSuccess view/plivoDeposit.mustache PlivoDeposit view/depositVerify.mustache Home > $@
 
 clean:
