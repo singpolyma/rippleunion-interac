@@ -48,7 +48,7 @@ label {
 
 label > span {
 	display: inline-block;
-	width: 12%;
+	width: 10em;
 }
 
 input {
