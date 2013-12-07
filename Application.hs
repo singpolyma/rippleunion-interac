@@ -5,6 +5,7 @@ import Prelude ()
 import BasicPrelude
 import System.Random (randomRIO)
 import Database.SQLite3 (SQLError(..), Error(ErrorConstraint))
+import qualified Data.Text as T
 
 import Network.Wai (Application)
 import Network.HTTP.Types (ok200)
@@ -14,6 +15,8 @@ import Network.Wai.Digestive (bodyFormEnv_)
 import SimpleForm.Combined (tel, label, Label(..), wdef, vdef)
 import SimpleForm.Render.XHTML5 (render)
 import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm)
+import qualified SimpleForm as SF
+import qualified SimpleForm.Validation as SFV
 import Text.Digestive.Form (monadic)
 import Text.Blaze (preEscapedToMarkup)
 
@@ -43,11 +46,18 @@ htmlEscape = concatMap escChar
 lbl :: String -> Maybe Label
 lbl = Just . Label . s
 
+digits10 :: SFV.Validation Text
+digits10 = SFV.pmap go SFV.text
+	where
+	go t
+		| T.length t == 10 = Just (T.cons '1' t)
+		| otherwise = Nothing
+
 depositForm :: (Functor m, MonadIO m) => SimpleForm' m Deposit
 depositForm = do
 	fn'     <- input (s"fn") (Just . depositorFN) (wdef,vdef) (mempty { label = lbl"Full name"})
 	email'  <- input_ (s"email") (Just . depositorEmail)
-	tel'    <- input  (s"tel") (Just . depositorTel) tel (mempty {label = lbl"Telephone number"})
+	tel'    <- input  (s"tel") (Just . depositorTel) (SF.tel,digits10) (mempty {label = lbl"Telephone number"})
 	amount' <- input_ (s"amount") (Just . depositAmount)
 
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,999999)
