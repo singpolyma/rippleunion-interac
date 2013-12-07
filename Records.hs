@@ -7,6 +7,7 @@ import Text.Blaze.Html (Html)
 import Text.Blaze.Internal (MarkupM)
 import Network.URI (URI)
 import Text.Email.Validate (EmailAddress, validate)
+import Data.Base58Address (RippleAddress)
 
 import Data.Text.Buildable
 import Database.SQLite.Simple (SQLData(SQLText))
@@ -24,17 +25,23 @@ instance Buildable URI where
 	build = build . show
 
 instance ToRow Deposit where
-	toRow (Deposit rid fn email tel amnt complete) =
-		[toField rid, toField fn, toField (show email), toField tel, toField amnt, toField complete]
+	toRow (Deposit rid fn email tel ripple amnt complete) =
+		[toField rid, toField fn, toField (show email), toField tel, toField (show ripple), toField amnt, toField complete]
 
 instance FromRow Deposit where
-	fromRow = Deposit <$> field <*> field <*> fieldWith emailF <*> field <*> field <*> field
+	fromRow = Deposit <$> field <*> field <*> fieldWith emailF <*> field <*> fieldWith rippleF <*> field <*> field
 		where
 		emailF f = case fieldData f of
 			(SQLText t) -> case validate (encodeUtf8 t) of
 				Left e -> Errors [toException $ ConversionFailed "TEXT" "EmailAddress" e]
 				Right email -> Ok email
 			_ -> Errors [toException $ ConversionFailed "TEXT" "EmailAddress" "need a text"]
+
+		rippleF f = case fieldData f of
+			(SQLText t) -> case readMay t of
+				Nothing -> Errors [toException $ ConversionFailed "TEXT" "RippleAddress" "invalid"]
+				Just ripple -> Ok ripple
+			_ -> Errors [toException $ ConversionFailed "TEXT" "RippleAddress" "need a text"]
 
 instance (CanVerify a) => ToRow (Verification a) where
 	toRow (Verification item typ) = [
@@ -69,6 +76,7 @@ data Deposit = Deposit {
 		depositorFN     :: Text,
 		depositorEmail  :: EmailAddress,
 		depositorTel    :: Text,
+		depositorRipple :: RippleAddress,
 		depositAmount   :: Double,
 		depositComplete :: Bool
 	}

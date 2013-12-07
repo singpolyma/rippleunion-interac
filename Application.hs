@@ -12,10 +12,10 @@ import Network.HTTP.Types (ok200)
 import Network.Wai.Util (stringHeaders, textBuilder)
 
 import Network.Wai.Digestive (bodyFormEnv_)
-import SimpleForm.Combined (tel, label, Label(..), wdef, vdef)
+import SimpleForm.Combined (label, Label(..), wdef, vdef, ShowRead(..), unShowRead)
 import SimpleForm.Render.XHTML5 (render)
 import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm)
-import qualified SimpleForm as SF
+import SimpleForm (tel)
 import qualified SimpleForm.Validation as SFV
 import Text.Digestive.Form (monadic)
 import Text.Blaze (preEscapedToMarkup)
@@ -57,11 +57,12 @@ depositForm :: (Functor m, MonadIO m) => SimpleForm' m Deposit
 depositForm = do
 	fn'     <- input (s"fn") (Just . depositorFN) (wdef,vdef) (mempty { label = lbl"Full name"})
 	email'  <- input_ (s"email") (Just . depositorEmail)
-	tel'    <- input  (s"tel") (Just . depositorTel) (SF.tel,digits10) (mempty {label = lbl"Telephone number"})
+	tel'    <- input  (s"tel") (Just . depositorTel) (tel,digits10) (mempty {label = lbl"Telephone number"})
+	ripple' <- input  (s"ripple") (Just . ShowRead . depositorRipple) (wdef,vdef) (mempty {label = lbl"Ripple address"})
 	amount' <- input_ (s"amount") (Just . depositAmount)
 
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,999999)
-	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> amount' <*> pure False
+	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> fmap unShowRead ripple' <*> amount' <*> pure False
 
 plivoDepositForm :: (Monad m) => SimpleForm' m PlivoDeposit
 plivoDepositForm = do
@@ -107,7 +108,7 @@ verifyDeposit root db _ req = do
 	(vForm, dep) <- postSimpleForm render (bodyFormEnv_ req) plivoDepositForm
 	liftIO $ do
 		deps <- maybe (return [])
-			(query db (s"SELECT id,fn,email,tel,amount,complete FROM deposits WHERE id=? AND complete=0"))
+			(query db (s"SELECT id,fn,email,tel,ripple,amount,complete FROM deposits WHERE id=? AND complete=0"))
 				(fmap ((:[]) . plivoCode) dep)
 		case deps of
 			(x:_) -> do
@@ -133,7 +134,7 @@ plivoDeposit _ _ _ rid _ =
 -- | Increments id until success
 insertDeposit :: Connection -> Deposit -> IO Int64
 insertDeposit db x = do
-	r <- try $ execute db (s"INSERT INTO deposits VALUES (?,?,?,?,?,?)") x
+	r <- try $ execute db (s"INSERT INTO deposits VALUES (?,?,?,?,?,?,?)") x
 	case r of
 		Left (SQLError ErrorConstraint _ _) ->
 			insertDeposit db (x {depositId = succ $ depositId x})

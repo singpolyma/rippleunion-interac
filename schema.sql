@@ -3,6 +3,7 @@ CREATE TABLE deposits (
 	fn TEXT NOT NULL,
 	email TEXT NOT NULL,
 	tel TEXT NOT NULL,
+	ripple TEXT NOT NULL,
 	amount REAL NOT NULL,
 	complete INTEGER NOT NULL DEFAULT 0
 );
