@@ -47,10 +47,17 @@ lbl :: String -> Maybe Label
 lbl = Just . Label . s
 
 digits10 :: SFV.Validation Text
-digits10 = SFV.pmap go SFV.text
+digits10 = SFV.pmap go vdef
 	where
 	go t
 		| T.length t == 10 = Just (T.cons '1' t)
+		| otherwise = Nothing
+
+amountLimit :: SFV.Validation Double
+amountLimit = SFV.pmap go vdef
+	where
+	go amnt
+		| amnt <= fromIntegral serviceLimit = Just amnt
 		| otherwise = Nothing
 
 depositForm :: (Functor m, MonadIO m) => SimpleForm' m Deposit
@@ -59,7 +66,7 @@ depositForm = do
 	email'  <- input_ (s"email") (Just . depositorEmail)
 	tel'    <- input  (s"tel") (Just . depositorTel) (tel,digits10) (mempty {label = lbl"Telephone number"})
 	ripple' <- input  (s"ripple") (Just . ShowRead . depositorRipple) (wdef,vdef) (mempty {label = lbl"Ripple address"})
-	amount' <- input_ (s"amount") (Just . depositAmount)
+	amount' <- input (s"amount") (Just . depositAmount) (wdef,amountLimit) (mempty {label = lbl"Amount in CAD"})
 
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,999999)
 	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> fmap unShowRead ripple' <*> amount' <*> pure False

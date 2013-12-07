@@ -18,6 +18,9 @@ import Database.SQLite.Simple.FromField (fieldData, ResultError(ConversionFailed
 import Database.SQLite.Simple.Ok (Ok(Ok, Errors))
 import Text.Blaze.Html.Renderer.Text (renderHtmlBuilder)
 
+serviceLimit :: Int
+serviceLimit = 100
+
 instance Buildable (MarkupM a) where
 	build = renderHtmlBuilder . fmap (const ())
 
