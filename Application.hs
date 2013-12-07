@@ -59,7 +59,7 @@ processDeposit root db req = do
 	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
 	liftIO $ case dep of
 		Just x -> do
-			execute db (s"INSERT INTO deposits VALUES (?,?,?,?)") x
+			execute db (s"INSERT INTO deposits (fn,email,tel,amount) VALUES (?,?,?,?)") x
 			textBuilder ok200 headers $ viewDepositSuccess htmlEscape
 				(DepositSuccess hPath)
 		Nothing ->
