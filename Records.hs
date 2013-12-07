@@ -38,3 +38,9 @@ data Deposit = Deposit {
 		depositorTel   :: Text,
 		depositAmount  :: Float
 	}
+
+data PlivoConfig = PlivoConfig {
+		plivoAuthId    :: String,
+		plivoAuthToken :: String,
+		plivoTel       :: String
+	}

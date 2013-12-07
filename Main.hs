@@ -17,6 +17,7 @@ import Network.Wai.Middleware.AcceptOverride (acceptOverride)
 import Network.Wai.Application.Static (staticApp, defaultWebAppSettings)
 
 import Network.Wai.Dispatch
+import Records
 import Routes
 
 addTrailingSlash :: URI -> URI
@@ -28,24 +29,29 @@ addTrailingSlash u@(URI {uriPath = p})
 staticRoot :: FilePath -> Application
 staticRoot = staticApp . defaultWebAppSettings
 
-app :: URI -> Int -> String -> IO ()
-app root port dbpth = do
+app :: URI -> Int -> String -> String -> String -> String -> IO ()
+app root port dbpth pid ptk ptl = do
 	cwd <- getWorkingDirectory
 	db <- open dbpth
 	run port $
 		logStdoutDev $ autohead $ acceptOverride $ jsonp $ -- Middleware
-		dispatch (staticRoot cwd) $ routes root db         -- Do routing
+		dispatch (staticRoot cwd) $ routes root db plivo   -- Do routing
+	where
+	plivo = PlivoConfig pid ptk ptl
 
 main :: IO ()
 main = do
 	args <- getArgs
 	case args of
-		[dbp, root] -> main' (fmap addTrailingSlash $ parseAbsoluteURI root) dbp
-		[dbp] -> main' (parseAbsoluteURI "http://localhost:3000/") dbp
-		_ -> hPutStrLn stderr "Usage: ./Main <db path> <Root URI>"
+		[dbp, pid, ptk, ptl, root] ->
+			main' (fmap addTrailingSlash $ parseAbsoluteURI root) dbp pid ptk ptl
+		[dbp, pid, ptk, ptl] ->
+			main' (parseAbsoluteURI "http://localhost:3000/") dbp pid ptk ptl
+		_ -> hPutStrLn stderr "Usage: ./Main <db path> <Plivo AUTHID> <Plivo AUTH TOKEN> <Plivo Telephone Number> <Root URI>"
 	where
 	main' (Just r@(URI {uriAuthority = Just (URIAuth {uriPort = ':':port})})) =
 		app r (read port)
 	main' (Just r@(URI {uriAuthority = Just (URIAuth {uriPort = ""})})) =
 		app r 80
-	main' _ = const $ hPutStrLn stderr "Invalid Root URI given"
+	main' _ = const $ const $ const $ const $
+		hPutStrLn stderr "Invalid Root URI given"

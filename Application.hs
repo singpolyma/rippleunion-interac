@@ -50,16 +50,16 @@ depositForm = do
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,999999)
 	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> amount'
 
-home :: URI -> Connection -> Application
-home root _ _ = do
+home :: URI -> Connection -> PlivoConfig -> Application
+home root _ _ _ = do
 	rForm <- getSimpleForm render Nothing depositForm
 	textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
 	where
 	fPath = processDepositPath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
 
-processDeposit :: URI -> Connection -> Application
-processDeposit root db req = do
+processDeposit :: URI -> Connection -> PlivoConfig -> Application
+processDeposit root db _ req = do
 	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
 	liftIO $ case dep of
 		Just x -> do
