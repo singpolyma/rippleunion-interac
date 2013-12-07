@@ -1,5 +1,6 @@
 module Records where
 
+import Data.Int (Int64)
 import Text.Blaze.Html (Html)
 import Text.Blaze.Internal (MarkupM)
 import Data.Text (Text)
@@ -18,8 +19,8 @@ instance Buildable URI where
 	build = build . show
 
 instance ToRow Deposit where
-	toRow (Deposit fn email tel amount) =
-		[toField fn, toField (show email), toField tel, toField amount]
+	toRow (Deposit rid fn email tel amnt) =
+		[toField rid, toField fn, toField (show email), toField tel, toField amnt]
 
 data Home = Home {
 		renderedDepositForm :: Html,
@@ -31,6 +32,7 @@ data DepositSuccess = DepositSuccess {
 	}
 
 data Deposit = Deposit {
+		depositId      :: Int64,
 		depositorFN    :: Text,
 		depositorEmail :: EmailAddress,
 		depositorTel   :: Text,
