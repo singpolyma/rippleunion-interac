@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+		<title>Ripple Union Interac e-Transfers</title>
+		<link rel="shortcut icon" type="image/png" href="/favicon.ico" />
+		<link rel="stylesheet" type="text/css" href="/assets/common.css" />
+	</head>
+
+	<body>
+		<h1><a href="//rippleunion.com"><img src="/assets/logo.png" alt="Ripple Union" /></a> Interac e-Transfers</h1>
+
+		<section>
+			<h1>Transfer to Bank Account</h1>
+			{{#successfulQuote}}
+				<p>To complete your transaction, send {{quoteAmount}} CAD to <a href="https://ripple.com//send?name=Ripple%20Union&amp;to=r3ADD8kXSUKHd6zTCKfnKT3zV9EZHjzp1S&amp;dt={{quoteId}}&amp;amount={{quoteAmount}}%2FCAD">r3ADD8kXSUKHd6zTCKfnKT3zV9EZHjzp1S</a> with destination tag {{quoteId}}.</p>
+			{{/successfulQuote}}
+
+			<p>Please allow up to 2 business days for processing.</p>
+
+			<a href="{{quoteHomeLink}}">« Back</a>
+		</section>
+	</body>
+</html>

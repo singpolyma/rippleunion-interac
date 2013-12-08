@@ -21,6 +21,9 @@ import Text.Blaze.Html.Renderer.Text (renderHtmlBuilder)
 serviceLimit :: Int
 serviceLimit = 100
 
+serviceFee :: Int
+serviceFee = 2
+
 instance Buildable (MarkupM a) where
 	build = renderHtmlBuilder . fmap (const ())
 
@@ -46,6 +49,10 @@ instance FromRow Deposit where
 				Just ripple -> Ok ripple
 			_ -> Errors [toException $ ConversionFailed "TEXT" "RippleAddress" "need a text"]
 
+instance ToRow Quote where
+	toRow (Quote qid typ amnt dest email complete) =
+		[toField qid, toField typ, toField amnt, toField (show dest), toField (show email), toField complete]
+
 instance (CanVerify a) => ToRow (Verification a) where
 	toRow (Verification item typ) = [
 			toField itemId,
@@ -58,6 +65,9 @@ instance (CanVerify a) => ToRow (Verification a) where
 instance ToField VerificationType where
 	toField = toField . show
 
+instance ToField QuoteType where
+	toField = toField . show
+
 class CanVerify a where
 	verifyItemData :: a -> (Int64, String)
 
@@ -65,8 +75,13 @@ instance CanVerify Deposit where
 	verifyItemData d = (depositId d, "deposits")
 
 data Home = Home {
-		renderedDepositForm :: Html,
-		depositFormAction :: URI
+		renderedDepositForm :: [Form],
+		renderedQuoteForm   :: [Form]
+	}
+
+data Form = Form {
+		formHtml   :: Html,
+		formAction :: URI
 	}
 
 data DepositSuccess = DepositSuccess {
@@ -94,6 +109,23 @@ data Verification a = Verification {
 
 data PlivoDeposit = PlivoDeposit {
 		plivoCode :: String
+	}
+
+data QuoteType = InteracETransferQuote
+	deriving (Show, Read, Enum)
+
+data Quote = Quote {
+		quoteId          :: Word32, -- Because destination tag
+		quoteType        :: QuoteType,
+		quoteAmount      :: Double,
+		quoteDestination :: EmailAddress,
+		quotorEmail      :: EmailAddress,
+		quoteComplete    :: Bool
+	}
+
+data QuoteSuccess = QuoteSuccess {
+		successfulQuote :: [Quote],
+		quoteHomeLink :: URI
 	}
 
 data PlivoConfig = PlivoConfig {

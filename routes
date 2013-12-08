@@ -1,4 +1,7 @@
 GET / => home
+
 POST /deposits => processDeposit
 POST /deposits/verify => verifyDeposit
 POST /plivo/deposits/: => plivoDeposit
+
+POST /quotes => processQuote

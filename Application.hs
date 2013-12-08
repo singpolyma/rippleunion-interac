@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Application (home, processDeposit, plivoDeposit, verifyDeposit) where
+module Application (home, processDeposit, plivoDeposit, verifyDeposit, processQuote) where
 
 import Prelude ()
 import BasicPrelude
@@ -25,7 +25,8 @@ import Plivo (callAPI, createOutboundCall)
 import Network.URI (URI(..))
 import Network.URI.Partial (relativeTo)
 
-import Database.SQLite.Simple (query, execute, Connection)
+import Database.SQLite.Simple (query, execute, Connection, Query)
+import Database.SQLite.Simple.ToRow (ToRow)
 
 import Records
 import MustacheTemplates
@@ -75,6 +76,17 @@ depositForm = do
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,999999)
 	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> fmap unShowRead ripple' <*> amount' <*> pure False
 
+quoteForm :: (Functor m, MonadIO m) => SimpleForm' m Quote
+quoteForm = do
+	destination' <- input_ (s"destination") (Just . quoteDestination)
+	email'       <- input (s"email") (Just . quotorEmail) (wdef,vdef)
+		(mempty {label = lbl"Your Email"})
+	amount' <- input (s"amount") (Just . quoteAmount) (wdef,amountLimit)
+		(mempty {label = lbl"Amount in CAD"})
+
+	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,maxBound)
+	return $ Quote <$> rid <*> pure InteracETransferQuote <*> amount' <*> destination' <*> email' <*> pure False
+
 plivoDepositForm :: (Monad m) => SimpleForm' m PlivoDeposit
 plivoDepositForm = do
 	code' <- input (s"code") (Just . plivoCode) (wdef,vdef) (mempty { label = lbl"Verification code"})
@@ -83,10 +95,13 @@ plivoDepositForm = do
 
 home :: URI -> Connection -> PlivoConfig -> Application
 home root _ _ _ = do
-	rForm <- getSimpleForm render Nothing depositForm
-	textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
+	dForm <- getSimpleForm render Nothing depositForm
+	qForm <- getSimpleForm render Nothing quoteForm
+	textBuilder ok200 headers $
+		viewHome htmlEscape (Home [Form dForm dPath] [Form qForm qPath])
 	where
-	fPath = processDepositPath `relativeTo` root
+	dPath = processDepositPath `relativeTo` root
+	qPath = processQuotePath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
 
 processDeposit :: URI -> Connection -> PlivoConfig -> Application
@@ -94,7 +109,9 @@ processDeposit root db plivo req = do
 	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
 	liftIO $ case dep of
 		Just x -> do
-			finalId <- insertDeposit db x
+			finalId <- depositId <$>
+				insertSucc db (s"INSERT INTO deposits VALUES (?,?,?,?,?,?,?)")
+				(\d -> d {depositId = succ $ depositId d}) x
 			apiResult <- callAPI (plivoAuthId plivo) (plivoAuthToken plivo) $
 				createOutboundCall (plivoTel plivo) (textToString $ depositorTel x)
 					(plivoDepositPath finalId `relativeTo` root)
@@ -103,12 +120,12 @@ processDeposit root db plivo req = do
 				Right _ -> do
 					vForm <- getSimpleForm render Nothing plivoDepositForm
 					textBuilder ok200 headers $ viewDepositVerify htmlEscape
-						(Home vForm vPath)
+						(Home [Form vForm vPath] [])
 				Left _ ->
 					textBuilder ok200 headers $ viewHome htmlEscape
-						(Home (preEscapedToMarkup "<p class='error'>Something went wrong trying to verify your telephone number: did you enter it correctly?</p>" ++ rForm) fPath)
-		Nothing ->
-			textBuilder ok200 headers $ viewHome htmlEscape (Home rForm fPath)
+						(Home [Form (preEscapedToMarkup "<p class='error'>Something went wrong trying to verify your telephone number: did you enter it correctly?</p>" ++ rForm) fPath] [])
+		Nothing -> textBuilder ok200 headers $
+			viewHome htmlEscape (Home [Form rForm fPath] [])
 	where
 	vPath = verifyDepositPath `relativeTo` root
 	fPath = processDepositPath `relativeTo` root
@@ -129,7 +146,7 @@ verifyDeposit root db _ req = do
 					(DepositSuccess [x] hPath)
 			[] ->
 				textBuilder ok200 headers $ viewDepositVerify htmlEscape
-					(Home (preEscapedToMarkup "<p class='error'>Invalid code</p>" ++ vForm) vPath)
+					(Home [Form (preEscapedToMarkup "<p class='error'>Invalid code</p>" ++ vForm) vPath] [])
 	where
 	vPath = verifyDepositPath `relativeTo` root
 	hPath = homePath `relativeTo` root
@@ -142,12 +159,29 @@ plivoDeposit _ _ _ rid _ =
 	code = intersperse ' ' $ shows rid ""
 	Just headers = stringHeaders [("Content-Type", "application/xml; charset=utf8")]
 
+processQuote :: URI -> Connection -> PlivoConfig -> Application
+processQuote root db _ req = do
+	(qForm, quote) <- postSimpleForm render (bodyFormEnv_ req) quoteForm
+	liftIO $ case quote of
+		Just q -> do
+			finalQuote <- insertSucc db (s"INSERT INTO quotes VALUES (?,?,?,?,?,?)")
+				(\q -> q {quoteId = succ $ quoteId q}) q
+
+			textBuilder ok200 headers $ viewQuoteSuccess htmlEscape
+				(QuoteSuccess [finalQuote {quoteAmount = quoteAmount finalQuote + fromIntegral serviceFee}] hPath)
+		Nothing -> textBuilder ok200 headers $
+			viewHome htmlEscape (Home [] [Form qForm qPath])
+	where
+	qPath = processQuotePath `relativeTo` root
+	hPath = homePath `relativeTo` root
+	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
+
 -- | Increments id until success
-insertDeposit :: Connection -> Deposit -> IO Int64
-insertDeposit db x = do
-	r <- try $ execute db (s"INSERT INTO deposits VALUES (?,?,?,?,?,?,?)") x
+insertSucc :: (ToRow a) => Connection -> Query -> (a -> a) -> a -> IO a
+insertSucc db q succ x = do
+	r <- try $ execute db q x
 	case r of
 		Left (SQLError ErrorConstraint _ _) ->
-			insertDeposit db (x {depositId = succ $ depositId x})
+			insertSucc db q succ (succ x)
 		Left e -> throwIO e
-		Right () -> return (depositId x)
+		Right () -> return x

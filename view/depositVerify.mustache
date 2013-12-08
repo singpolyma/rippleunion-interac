@@ -14,10 +14,12 @@
 			<h1>Transfer to IOUs</h1>
 			<p>An automated service will call your telephone number shortly.  Please enter the verification code in the form below.</p>
 
-			<form method="post" action="{{depositFormAction}}">
-				{{{renderedDepositForm}}}
-				<button type="submit">Verify</button>
-			</form>
+			{{#renderedDepositForm}}
+				<form method="post" action="{{formAction}}">
+					{{{formHtml}}}
+					<button type="submit">Verify</button>
+				</form>
+			{{/renderedDepositForm}}
 		</section>
 	</body>
 </html>
