@@ -15,7 +15,7 @@ import Network.Wai.Digestive (bodyFormEnv_)
 import SimpleForm.Combined (label, Label(..), wdef, vdef, ShowRead(..), unShowRead)
 import SimpleForm.Render.XHTML5 (render)
 import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm)
-import SimpleForm (tel)
+import SimpleForm (tel, password, textarea)
 import qualified SimpleForm.Validation as SFV
 import Text.Digestive.Form (monadic)
 import Text.Blaze (preEscapedToMarkup)
@@ -78,14 +78,20 @@ depositForm = do
 
 quoteForm :: (Functor m, MonadIO m) => SimpleForm' m Quote
 quoteForm = do
-	destination' <- input_ (s"destination") (Just . quoteDestination)
+	destination' <- input (s"destination") (Just . quoteDestination) (wdef,vdef)
+		(mempty {label = lbl"Destination Email"})
 	email'       <- input (s"email") (Just . quotorEmail) (wdef,vdef)
 		(mempty {label = lbl"Your Email"})
-	amount' <- input (s"amount") (Just . quoteAmount) (wdef,amountLimit)
+	amount'      <- input (s"amount") (Just . quoteAmount) (wdef,amountLimit)
 		(mempty {label = lbl"Amount in CAD"})
+	question'    <- input_ (s"question") (Just . quoteQuestion)
+	answer'      <- input (s"answer") (Just . quoteAnswer) (password,vdef)
+		(mempty {label = lbl"Secret Answer"})
+	message'     <- input (s"message") (Just . quoteMessage) (textarea,vdef)
+		mempty
 
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,maxBound)
-	return $ Quote <$> rid <*> pure InteracETransferQuote <*> amount' <*> destination' <*> email' <*> pure False
+	return $ Quote <$> rid <*> pure InteracETransferQuote <*> amount' <*> destination' <*> email' <*> question' <*> answer' <*> message' <*> pure False
 
 plivoDepositForm :: (Monad m) => SimpleForm' m PlivoDeposit
 plivoDepositForm = do
@@ -164,7 +170,7 @@ processQuote root db _ req = do
 	(qForm, quote) <- postSimpleForm render (bodyFormEnv_ req) quoteForm
 	liftIO $ case quote of
 		Just q -> do
-			finalQuote <- insertSucc db (s"INSERT INTO quotes VALUES (?,?,?,?,?,?)")
+			finalQuote <- insertSucc db (s"INSERT INTO quotes VALUES (?,?,?,?,?,?,?,?,?)")
 				(\q -> q {quoteId = succ $ quoteId q}) q
 
 			textBuilder ok200 headers $ viewQuoteSuccess htmlEscape

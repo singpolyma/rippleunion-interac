@@ -14,6 +14,9 @@ CREATE TABLE quotes (
 	amount REAL NOT NULL,
 	destination TEXT NOT NULL,
 	email TEXT NOT NULL,
+	question TEXT NOT NULL,
+	answer TEXT NOT NULL,
+	message TEXT NOT NULL,
 	complete INTEGER NOT NULL DEFAULT 0
 );
 

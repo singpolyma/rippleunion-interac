@@ -73,3 +73,7 @@ label > .error {
 	display: inline;
 	margin-left: 0.2em;
 }
+
+textarea {
+	display: block;
+}

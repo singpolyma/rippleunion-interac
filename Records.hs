@@ -50,8 +50,8 @@ instance FromRow Deposit where
 			_ -> Errors [toException $ ConversionFailed "TEXT" "RippleAddress" "need a text"]
 
 instance ToRow Quote where
-	toRow (Quote qid typ amnt dest email complete) =
-		[toField qid, toField typ, toField amnt, toField (show dest), toField (show email), toField complete]
+	toRow (Quote qid typ amnt dest email q a msg complete) =
+		[toField qid, toField typ, toField amnt, toField (show dest), toField (show email), toField q, toField a, toField msg, toField complete]
 
 instance (CanVerify a) => ToRow (Verification a) where
 	toRow (Verification item typ) = [
@@ -120,6 +120,9 @@ data Quote = Quote {
 		quoteAmount      :: Double,
 		quoteDestination :: EmailAddress,
 		quotorEmail      :: EmailAddress,
+		quoteQuestion    :: Text,
+		quoteAnswer      :: Text,
+		quoteMessage     :: Text,
 		quoteComplete    :: Bool
 	}
 
