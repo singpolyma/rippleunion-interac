@@ -136,3 +136,16 @@ data PlivoConfig = PlivoConfig {
 		plivoAuthToken :: String,
 		plivoTel       :: String
 	}
+
+data Header = Header {
+	}
+
+instance Monoid Header where
+	mempty = Header
+	mappend _ _ = Header
+
+instance Eq Header where
+	_ == _ = False
+
+header :: Header
+header = Header

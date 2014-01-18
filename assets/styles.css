@@ -1,0 +1,7 @@
+@import "//rippleunion.com/base.css";
+@import "//rippleunion.com/form.css";
+
+form {
+	display: table;
+	margin: auto;
+}
