@@ -108,7 +108,7 @@ home root _ _ _ = do
 	where
 	dPath = processDepositPath `relativeTo` root
 	qPath = processQuotePath `relativeTo` root
-	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
+	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
 
 processDeposit :: URI -> Connection -> PlivoConfig -> Application
 processDeposit root db plivo req = do
@@ -135,7 +135,7 @@ processDeposit root db plivo req = do
 	where
 	vPath = verifyDepositPath `relativeTo` root
 	fPath = processDepositPath `relativeTo` root
-	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
+	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
 
 verifyDeposit :: URI -> Connection -> PlivoConfig -> Application
 verifyDeposit root db _ req = do
@@ -156,14 +156,14 @@ verifyDeposit root db _ req = do
 	where
 	vPath = verifyDepositPath `relativeTo` root
 	hPath = homePath `relativeTo` root
-	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
+	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
 
 plivoDeposit :: URI -> Connection -> PlivoConfig -> Int64 -> Application
 plivoDeposit _ _ _ rid _ =
 	textBuilder ok200 headers $ viewPlivoDeposit htmlEscape (PlivoDeposit code)
 	where
 	code = intersperse ' ' $ shows rid ""
-	Just headers = stringHeaders [("Content-Type", "application/xml; charset=utf8")]
+	Just headers = stringHeaders [("Content-Type", "application/xml; charset=utf-8")]
 
 processQuote :: URI -> Connection -> PlivoConfig -> Application
 processQuote root db _ req = do
@@ -180,7 +180,7 @@ processQuote root db _ req = do
 	where
 	qPath = processQuotePath `relativeTo` root
 	hPath = homePath `relativeTo` root
-	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf8")]
+	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
 
 -- | Increments id until success
 insertSucc :: (ToRow a) => Connection -> Query -> (a -> a) -> a -> IO a
