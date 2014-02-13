@@ -5,3 +5,7 @@ form {
 	display: table;
 	margin: auto;
 }
+
+form p {
+	max-width: 26em;
+}
