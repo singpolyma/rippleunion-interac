@@ -3,6 +3,7 @@ module Application (home, processDeposit, plivoDeposit, verifyDeposit, processQu
 
 import Prelude ()
 import BasicPrelude
+import Data.Char (isDigit)
 import System.Random (randomRIO)
 import Database.SQLite3 (SQLError(..), Error(ErrorConstraint))
 import qualified Data.Text as T
@@ -48,10 +49,11 @@ lbl :: String -> Maybe Label
 lbl = Just . Label . s
 
 digits10 :: SFV.Validation Text
-digits10 = SFV.pmap go vdef
+digits10 = SFV.pmap (go . T.filter isDigit) vdef
 	where
 	go t
 		| T.length t == 10 = Just (T.cons '1' t)
+		| T.length t == 11 && T.head t == '1' = Just t
 		| otherwise = Nothing
 
 amountLimit :: SFV.Validation Double
