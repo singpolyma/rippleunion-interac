@@ -9,7 +9,7 @@ import Database.SQLite3 (SQLError(..), Error(ErrorConstraint))
 import qualified Data.Text as T
 
 import Network.Wai (Application)
-import Network.HTTP.Types (ok200)
+import Network.HTTP.Types (ok200, badRequest400)
 import Network.Wai.Util (stringHeaders, textBuilder)
 
 import Network.Wai.Digestive (bodyFormEnv_)
@@ -130,9 +130,9 @@ processDeposit root db plivo req = do
 					textBuilder ok200 headers $ viewDepositVerify htmlEscape
 						(Home [Form vForm vPath] [])
 				Left _ ->
-					textBuilder ok200 headers $ viewHome htmlEscape
+					textBuilder badRequest400 headers $ viewHome htmlEscape
 						(Home [Form (preEscapedToMarkup "<p class='error'>Something went wrong trying to verify your telephone number: did you enter it correctly?</p>" ++ rForm) fPath] [])
-		Nothing -> textBuilder ok200 headers $
+		Nothing -> textBuilder badRequest400 headers $
 			viewHome htmlEscape (Home [Form rForm fPath] [])
 	where
 	vPath = verifyDepositPath `relativeTo` root
