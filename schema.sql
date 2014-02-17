@@ -24,5 +24,6 @@ CREATE TABLE verifications (
 	item_id INTEGER NOT NULL,
 	item_table TEXT NOT NULL,
 	verification_type TEXT NOT NULL,
-	notes TEXT
+	notes TEXT,
+	addr_token TEXT
 );

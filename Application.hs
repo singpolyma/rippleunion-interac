@@ -1,22 +1,25 @@
 {-# LANGUAGE CPP #-}
-module Application (home, processDeposit, plivoDeposit, verifyDeposit, processQuote) where
+module Application (home, processDeposit, plivoDeposit, verifyDeposit, stripeVerifyDeposit, processQuote) where
 
 import Prelude ()
 import BasicPrelude
-import Data.Char (isDigit)
+import Data.Char (isDigit, isAlphaNum)
 import System.Random (randomRIO)
+import Control.Error (eitherT, EitherT(..), fmapLT, throwT)
+import Data.Digest.Pure.MD5 (md5, MD5Digest)
 import Database.SQLite3 (SQLError(..), Error(ErrorConstraint))
 import qualified Data.Text as T
+import qualified Data.ByteString.Lazy as LZ
 
 import Network.Wai (Application)
 import Network.HTTP.Types (ok200, badRequest400)
-import Network.Wai.Util (stringHeaders, textBuilder)
+import Network.Wai.Util (stringHeaders, textBuilder, string)
 
 import Network.Wai.Digestive (bodyFormEnv_)
-import SimpleForm.Combined (label, Label(..), wdef, vdef, ShowRead(..), unShowRead)
+import SimpleForm.Combined (input_html, label, Label(..), wdef, vdef, ShowRead(..), unShowRead)
 import SimpleForm.Render.XHTML5 (render)
-import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm)
-import SimpleForm (tel, password, textarea)
+import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm, fieldset)
+import SimpleForm (tel, password, textarea, hidden)
 import qualified SimpleForm.Validation as SFV
 import Text.Digestive.Form (monadic)
 import Text.Blaze (preEscapedToMarkup)
@@ -29,9 +32,12 @@ import Network.URI.Partial (relativeTo)
 import Database.SQLite.Simple (query, execute, Connection, Query)
 import Database.SQLite.Simple.ToRow (ToRow)
 
+import Stripe
 import Records
 import MustacheTemplates
 #include "PathHelpers.hs"
+
+type Action a = URI -> Connection -> PlivoConfig -> StripeConfig -> a
 
 s :: (IsString s) => String -> s
 s = fromString
@@ -101,8 +107,40 @@ plivoDepositForm = do
 
 	return $ PlivoDeposit <$> code'
 
-home :: URI -> Connection -> PlivoConfig -> Application
-home root _ _ _ = do
+-- TODO: verify postal code better
+-- TODO: verify ranges on month and year
+
+stripeVerifyForm :: (Monad m) => SimpleForm' m (Int64, Maybe RequestCard)
+stripeVerifyForm = do
+	depositId <- input (s"deposit_id") (Just . fst)
+		(hidden . fmap show, SFV.read) mempty
+	ccnum <- input (s"card_number") (fmap rCardNumber . snd) (wdef,vdef)
+		(mempty{label = Nothing, input_html = [(s"placeholder", s"Card Number")]})
+
+	exp <- fieldset (s"card_expiry") id $ do
+		month <- input (s"month") (fmap rCardExpMonth . snd) (wdef,vdef)
+			(mempty{label = Nothing, input_html = [(s"placeholder", s"MM")]})
+		year <- input (s"year") (fmap rCardExpYear . snd) (wdef,vdef)
+			(mempty{label = Nothing, input_html = [(s"placeholder", s"YYYY")]})
+
+		return $ (,) <$> month <*> year
+
+	cvc <- input (s"card_cvc") ((rCardCVC=<<) . snd) (wdef,vdef)
+		(mempty{label = Nothing, input_html = [(s"placeholder", s"CVC")]})
+	addr1 <- input (s"card_addr1") ((rCardAddrLineOne=<<) . snd) (wdef,vdef)
+		(mempty{label = Nothing, input_html = [(s"placeholder", s"Street Address")]})
+	postal <- input (s"card_postal_code") ((rCardAddrZip=<<) . snd) (wdef,vdef)
+		(mempty{label = Nothing, input_html = [(s"placeholder", s"Postal Code")]})
+
+	return $ (,) <$> depositId <*> (Just <$> (
+			uncurry <$> (RequestCard <$> ccnum) <*> exp
+			<*> fmap Just cvc <*> pure Nothing <*>
+			fmap Just addr1 <*> pure Nothing <*> pure Nothing <*>
+			fmap Just postal <*> pure Nothing <*> pure Nothing
+		))
+
+home :: Action Application
+home root _ _ _ _ = do
 	dForm <- getSimpleForm render Nothing depositForm
 	qForm <- getSimpleForm render Nothing quoteForm
 	textBuilder ok200 headers $
@@ -112,8 +150,8 @@ home root _ _ _ = do
 	qPath = processQuotePath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
 
-processDeposit :: URI -> Connection -> PlivoConfig -> Application
-processDeposit root db plivo req = do
+processDeposit :: Action Application
+processDeposit root db plivo _ req = do
 	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
 	liftIO $ case dep of
 		Just x -> do
@@ -139,8 +177,8 @@ processDeposit root db plivo req = do
 	fPath = processDepositPath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
 
-verifyDeposit :: URI -> Connection -> PlivoConfig -> Application
-verifyDeposit root db _ req = do
+verifyDeposit :: Action Application
+verifyDeposit root db _ _ req = do
 	(vForm, dep) <- postSimpleForm render (bodyFormEnv_ req) plivoDepositForm
 	liftIO $ do
 		deps <- maybe (return [])
@@ -148,27 +186,81 @@ verifyDeposit root db _ req = do
 				(fmap ((:[]) . plivoCode) dep)
 		case deps of
 			(x:_) -> do
-				execute db (s"INSERT INTO verifications (item_id,item_table,verification_type) VALUES (?,?,?)")
-					(Verification x AutomatedPhoneVerification)
+				execute db (s"INSERT INTO verifications (item_id,item_table,verification_type,notes,addr_token) VALUES (?,?,?,?,?)")
+					(Verification x AutomatedPhoneVerification Nothing Nothing)
+
+				-- Check if there's already a higher verification associated
+				-- with this phone number
+				v <- fmap (head.head) $ query db (s $ concat [
+						"SELECT ",
+							"count(1) ",
+						"FROM ",
+							"deposits LEFT JOIN verifications ",
+								"ON verifications.item_table='deposits' ",
+								"AND verifications.item_id=deposits.id ",
+						"WHERE ",
+						"deposits.tel=? AND verifications.verification_type IN (?,?)"
+					])
+					(depositorTel x, ManualPhoneVerification, StripeVerification)
+
+				stripeF <- getSimpleForm render (Just (depositId x, Nothing)) stripeVerifyForm
 				textBuilder ok200 headers $ viewDepositSuccess htmlEscape
-					(DepositSuccess [x] hPath)
+					(DepositSuccess [x] (v < (1::Int)) [Form stripeF svPath] hPath)
 			[] ->
-				textBuilder ok200 headers $ viewDepositVerify htmlEscape
+				textBuilder badRequest400 headers $ viewDepositVerify htmlEscape
 					(Home [Form (preEscapedToMarkup "<p class='error'>Invalid code</p>" ++ vForm) vPath] [])
 	where
+	svPath = stripeVerifyDepositPath `relativeTo` root
 	vPath = verifyDepositPath `relativeTo` root
 	hPath = homePath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
 
-plivoDeposit :: URI -> Connection -> PlivoConfig -> Int64 -> Application
-plivoDeposit _ _ _ rid _ =
+stripeVerifyDeposit :: Action Application
+stripeVerifyDeposit root db _ stripe req = do
+	(stripeF, r) <- postSimpleForm render (bodyFormEnv_ req) stripeVerifyForm
+	deps <- liftIO $ query db (s"SELECT id,fn,email,tel,ripple,amount,complete FROM deposits WHERE id=? LIMIT 1") [maybe 0 fst r]
+	case (deps, r) of
+		((dep:_), Just (_, Just card)) -> eitherT (\e ->
+			textBuilder badRequest400 headers $ viewDepositSuccess htmlEscape $
+				DepositSuccess [dep] True
+				[Form (preEscapedToMarkup ("<p class='error'>" ++ e ++ "</p>") ++ stripeF) svPath]
+				hPath
+			) return $ do
+				ex <- liftIO $ fmap (head.head) $ query db
+					(s"SELECT count(1) FROM verifications WHERE addr_token=?")
+					[show $ tokenizeAddr (rCardAddrLineOne card) (rCardAddrZip card)]
+				when (ex > (0::Int)) $
+					throwT "That address has already been used in a verification."
+
+				cust <- fmapLT (const "Verification failed.  Is it a Canadian card?") $
+					EitherT $ verifyCard stripe
+					(Just $ T.unpack $ depositorFN dep ++ (s" -- ") ++ depositorTel dep)
+					(Just $ T.unpack $ show $ depositorEmail dep)
+					card
+				liftIO $ execute db (s"INSERT INTO verifications (item_id,item_table,verification_type,notes,addr_token) VALUES (?,?,?,?,?)") $
+					Verification dep StripeVerification (Just cust) (Just $ show $
+						tokenizeAddr (rCardAddrLineOne card) (rCardAddrZip card))
+
+				textBuilder ok200 headers $ viewDepositSuccess htmlEscape
+					(DepositSuccess [dep] False [] hPath)
+		((dep:_), _) ->
+			textBuilder badRequest400 headers $ viewDepositSuccess htmlEscape
+				(DepositSuccess [dep] True [Form stripeF svPath] hPath)
+		_ -> string badRequest400 [] "Deposit code not found in database, please email help@rippleunion.com"
+	where
+	svPath = stripeVerifyDepositPath `relativeTo` root
+	hPath = homePath `relativeTo` root
+	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
+
+plivoDeposit :: Action (Int64 -> Application)
+plivoDeposit _ _ _ _ rid _ =
 	textBuilder ok200 headers $ viewPlivoDeposit htmlEscape (PlivoDeposit code)
 	where
 	code = intersperse ' ' $ shows rid ""
 	Just headers = stringHeaders [("Content-Type", "application/xml; charset=utf-8")]
 
-processQuote :: URI -> Connection -> PlivoConfig -> Application
-processQuote root db _ req = do
+processQuote :: Action Application
+processQuote root db _ _ req = do
 	(qForm, quote) <- postSimpleForm render (bodyFormEnv_ req) quoteForm
 	liftIO $ case quote of
 		Just q -> do
@@ -193,3 +285,11 @@ insertSucc db q succ x = do
 			insertSucc db q succ (succ x)
 		Left e -> throwIO e
 		Right () -> return x
+
+tokenizeAddr :: Maybe Text -> Maybe Text -> MD5Digest
+tokenizeAddr street postal =
+	md5 $ LZ.fromChunks $ map encodeUtf8 [street', postal']
+	where
+	street' = maybe T.empty (T.takeWhile isDigit . T.dropWhile (not . isDigit))
+		street
+	postal' = maybe T.empty (T.filter isAlphaNum) postal

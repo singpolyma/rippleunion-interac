@@ -54,10 +54,12 @@ instance ToRow Quote where
 		[toField qid, toField typ, toField amnt, toField (show dest), toField (show email), toField q, toField a, toField msg, toField complete]
 
 instance (CanVerify a) => ToRow (Verification a) where
-	toRow (Verification item typ) = [
+	toRow (Verification item typ notes token) = [
 			toField itemId,
 			toField itemTable,
-			toField typ
+			toField typ,
+			toField notes,
+			toField token
 		]
 		where
 		(itemId, itemTable) = verifyItemData item
@@ -74,6 +76,9 @@ class CanVerify a where
 instance CanVerify Deposit where
 	verifyItemData d = (depositId d, "deposits")
 
+instance Eq Form where
+	(Form _ a1) == (Form _ a2) = a1 == a2
+
 data Home = Home {
 		renderedDepositForm :: [Form],
 		renderedQuoteForm   :: [Form]
@@ -86,6 +91,8 @@ data Form = Form {
 
 data DepositSuccess = DepositSuccess {
 		successfulDeposit :: [Deposit],
+		higherVerificationNeeded :: Bool,
+		renderedStripeVerifyForm :: [Form],
 		homeLink :: URI
 	}
 
@@ -99,12 +106,14 @@ data Deposit = Deposit {
 		depositComplete :: Bool
 	}
 
-data VerificationType = AutomatedPhoneVerification | ManualPhoneVerification
+data VerificationType = AutomatedPhoneVerification | ManualPhoneVerification | StripeVerification
 	deriving (Show, Read, Enum)
 
 data Verification a = Verification {
 		verificationItem :: a,
-		verificationType :: VerificationType
+		verificationType :: VerificationType,
+		verificationNotes :: Maybe Text,
+		verificationAddrToken :: Maybe Text
 	}
 
 data PlivoDeposit = PlivoDeposit {

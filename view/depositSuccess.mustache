@@ -4,6 +4,7 @@
 		{{#header}}
 			{{> meta.mustache}}
 		{{/header}}
+		<script type="text/javascript" src="/assets/stripeVerify.js"></script>
 	</head>
 
 	<body>
@@ -13,7 +14,17 @@
 
 		<section>
 			<h1>Transfer to IOUs</h1>
-			<p>Your telephone number has been verified.  In some cases, our staff may also call you to further verify your identity and may ask for your birth date and/or mailing address.</p>
+			<p>
+				Your telephone number has been verified.
+
+				{{#higherVerificationNeeded}}
+					Our staff will also call you to further verify your identity and may ask for your birth date and/or mailing address.
+					You may alternatively <a href="#stripeVerify">use your credit card to verify instantly</a> (your card will not be charged).
+				{{/higherVerificationNeeded}}
+				{{^renderedStripeVerifyForm}}
+					<strong>Your credit card information has been verified.</strong>
+				{{/renderedStripeVerifyForm}}
+			</p>
 
 			{{#successfulDeposit}}
 				<p>You may now send your Interac e-Transfer for {{depositAmount}} CAD to <a href="mailto:etransfer.{{depositId}}@rippleunion.com">etransfer.{{depositId}}@rippleunion.com</a>.  You may use any security question, but please make the answer {{depositId}}.</p>
@@ -23,5 +34,19 @@
 
 			<a href="{{homeLink}}">« Back</a>
 		</section>
+
+		{{#higherVerificationNeeded}}
+			<section id="stripeVerify">
+				<h1>Use Your Credit Card to Verify Instantly</h1>
+				<p>To speed up your verification, you may enter credit card details via the form below.  We use this information to instantly verify your identity.  <strong>Your card will not be charged.</strong></p>
+
+				{{#renderedStripeVerifyForm}}
+					<form method="post" action="{{formAction}}#stripeVerify">
+						{{{formHtml}}}
+						<button type="submit">Verify</button>
+					</form>
+				{{/renderedStripeVerifyForm}}
+			</section>
+		{{/higherVerificationNeeded}}
 	</body>
 </html>

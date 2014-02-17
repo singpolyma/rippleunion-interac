@@ -9,3 +9,61 @@ form {
 form p {
 	max-width: 26em;
 }
+
+.modal {
+	visibility: hidden;
+	opacity: 0;
+	position: absolute;
+	top: 10%;
+	left: 0;
+	right: 0;
+	width: 74%;
+	max-width: 30em;
+	margin: 0 auto;
+	padding: 3%;
+	background: #eee;
+	border: 2px solid #555;
+	border-radius: 1em;
+	transition: opacity 0.15s ease-in-out 0s, visibility 0.15s ease-in-out 0s;
+}
+
+.modal > h1 {
+	margin: 0;
+}
+
+#stripeVerify form label {
+	display: inline;
+}
+
+#stripeVerify form input {
+	width: auto;
+}
+
+#stripeVerify form input[name=card_number] {
+	display: block;
+}
+
+#stripeVerify form input[name=card_cvc] {
+	width: 2em;
+}
+
+#stripeVerify form input[name="card_expiry[month]"] {
+	width: 2em;
+}
+
+#stripeVerify form input[name="card_expiry[year]"] {
+	width: 3em;
+}
+
+#stripeVerify form input[name=card_addr1], #stripeVerify form input[name=card_postal_code] {
+	clear: both;
+	display: block;
+}
+
+#stripeVerify form fieldset {
+	float: right;
+}
+
+#stripeVerify form p, #stripeVerify form input {
+	max-width: 15em;
+}
