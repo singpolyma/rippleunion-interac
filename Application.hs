@@ -98,7 +98,7 @@ quoteForm = do
 	message'     <- input (s"message") (Just . quoteMessage) (textarea,vdef)
 		mempty
 
-	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,maxBound)
+	let rid = monadic $ fmap pure $ liftIO $ randomRIO (200000000,maxBound)
 	return $ Quote <$> rid <*> pure InteracETransferQuote <*> amount' <*> destination' <*> email' <*> question' <*> answer' <*> message' <*> pure False
 
 plivoDepositForm :: (Monad m) => SimpleForm' m PlivoDeposit
