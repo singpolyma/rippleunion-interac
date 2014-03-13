@@ -13,31 +13,10 @@
 
 		<p>If you're unfamiliar with Interac e-Transfers, you may want to check out the <a href="http://www.interac.ca/en/interac-etransfer/etransfer-detail#How-eTransfer-works" target="_blank">official FAQ</a>.</p>
 
-		{{#renderedQuoteForm}}
-			<section>
-				<header>
-					<h1>Email Someone Money</h1>
-					<p>This form allows you to send us a Ripple transfer in CAD, after which we will send an Interac e-Transfer to the destination email address (less a 2 CAD fee).  Your email address (which might be the same, if you're sending money to yourself) is needed so that we can contact you if anything goes wrong (such as if the recipient fails to accept the e-Transfer).  <strong>Make sure your recipient knows this transfer is coming from us, and what the secret answer is.</strong></p>
-
-					<p>This service is limited to {{serviceLimit}} CAD per user per day.</p>
-
-					<p>After submitting this form, you will be given a destination tag to use in your transaction, so that we can link it to this request.</p>
-
-					<p>Please allow up to 2 business days for processing.</p>
-				</header>
-
-				<form method="post" action="{{formAction}}">
-					{{{formHtml}}}
-					<p>By submitting this form you agree to be bound by the <a href="//rippleunion.com/terms">Terms of Service</a> and <a href="//rippleunion.com/privacy">Privacy Policy</a>.</p>
-					<button type="submit">I Agree; Send e-Transfer</button>
-				</form>
-			</section>
-		{{/renderedQuoteForm}}
-
 		{{#renderedDepositForm}}
 			<section>
 				<header>
-					<h1>Email Us Money</h1>
+					<h1>Send Money from Your Bank Account to Ripple</h1>
 					<p>This form allows you to send us an Interac e-Transfer, after which we will send CAD IOUs to your Ripple address, less a 2 CAD fee.  If necessary, your account will be activated with XRP and you will receive an email from our staff with further instructions.</p>
 
 					<p>This service is limited to {{serviceLimit}} CAD per user per day.</p>
@@ -56,5 +35,26 @@
 				</form>
 			</section>
 		{{/renderedDepositForm}}
+
+		{{#renderedQuoteForm}}
+			<section>
+				<header>
+					<h1>Send Money from Ripple to a Bank Account</h1>
+					<p>This form allows you to send us a Ripple transfer in CAD, after which we will send an Interac e-Transfer to the destination email address (less a 2 CAD fee).  Your email address (which might be the same, if you're sending money to yourself) is needed so that we can contact you if anything goes wrong (such as if the recipient fails to accept the e-Transfer).  <strong>Make sure your recipient knows this transfer is coming from us, and what the secret answer is.</strong></p>
+
+					<p>This service is limited to {{serviceLimit}} CAD per user per day.</p>
+
+					<p>After submitting this form, you will be given a destination tag to use in your transaction, so that we can link it to this request.</p>
+
+					<p>Please allow up to 2 business days for processing.</p>
+				</header>
+
+				<form method="post" action="{{formAction}}">
+					{{{formHtml}}}
+					<p>By submitting this form you agree to be bound by the <a href="//rippleunion.com/terms">Terms of Service</a> and <a href="//rippleunion.com/privacy">Privacy Policy</a>.</p>
+					<button type="submit">I Agree; Send e-Transfer</button>
+				</form>
+			</section>
+		{{/renderedQuoteForm}}
 	</body>
 </html>
