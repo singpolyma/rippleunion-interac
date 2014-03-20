@@ -81,7 +81,7 @@ depositForm = do
 	amount' <- input (s"amount") (Just . depositAmount) (wdef,amountLimit)
 		(mempty {label = lbl"Amount in CAD"})
 
-	let rid = monadic $ fmap pure $ liftIO $ randomRIO (1,999999)
+	let rid = monadic $ fmap pure $ liftIO $ randomRIO (100000,999999)
 	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> fmap unShowRead ripple' <*> amount' <*> pure False
 
 quoteForm :: (Functor m, MonadIO m) => SimpleForm' m Quote
