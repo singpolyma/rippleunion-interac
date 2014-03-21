@@ -19,7 +19,14 @@
 					<h1>Send Money from Your Bank Account to Ripple</h1>
 					<p>This form allows you to send us an Interac e-Transfer, after which we will send CAD IOUs to your Ripple address, less a 2 CAD fee.  If necessary, your account will be activated with XRP and you will receive an email from our staff with further instructions.</p>
 
-					<p>This service is limited to {{serviceLimit}} CAD per user per day.</p>
+					<p>
+						{{^foundDepositLimit}}
+						The base limit on this service is {{baseDepositLimit}} CAD per user per day, and goes up by 1 CAD for every 10 CAD successfully deposited.
+						{{/foundDepositLimit}}
+						{{#foundDepositLimit}}
+						Your limit is currently {{depositLimit}} CAD per day.
+						{{/foundDepositLimit}}
+					</p>
 
 					<p>An automated service will verify your telephone number shortly after you submit this form.  You will then be given a unique email address to send the e-Transfer to.  In some cases, our staff may also call you to further verify your identity and may ask for your birth date and/or mailing address.</p>
 
@@ -42,7 +49,7 @@
 					<h1>Send Money from Ripple to a Bank Account</h1>
 					<p>This form allows you to send us a Ripple transfer in CAD, after which we will send an Interac e-Transfer to the destination email address (less a 2 CAD fee).  Your email address (which might be the same, if you're sending money to yourself) is needed so that we can contact you if anything goes wrong (such as if the recipient fails to accept the e-Transfer).  <strong>Make sure your recipient knows this transfer is coming from us, and what the secret answer is.</strong></p>
 
-					<p>This service is limited to {{serviceLimit}} CAD per user per day.</p>
+					<p>This service is limited to {{quoteLimit}} CAD per user per day.</p>
 
 					<p>After submitting this form, you will be given a destination tag to use in your transaction, so that we can link it to this request.</p>
 

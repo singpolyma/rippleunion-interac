@@ -2,6 +2,7 @@ module Records where
 
 import Prelude ()
 import BasicPrelude
+import Data.Fixed (Centi)
 
 import Text.Blaze.Html (Html)
 import Text.Blaze.Internal (MarkupM)
@@ -10,7 +11,7 @@ import Text.Email.Validate (EmailAddress, validate)
 import Data.Base58Address (RippleAddress)
 
 import Data.Text.Buildable
-import Database.SQLite.Simple (SQLData(SQLText))
+import Database.SQLite.Simple (SQLData(SQLText,SQLInteger,SQLFloat))
 import Database.SQLite.Simple.FromRow (FromRow(..), field, fieldWith)
 import Database.SQLite.Simple.ToRow (ToRow(..))
 import Database.SQLite.Simple.ToField (ToField(..), toField)
@@ -18,11 +19,17 @@ import Database.SQLite.Simple.FromField (fieldData, ResultError(ConversionFailed
 import Database.SQLite.Simple.Ok (Ok(Ok, Errors))
 import Text.Blaze.Html.Renderer.Text (renderHtmlBuilder)
 
-serviceLimit :: Int
-serviceLimit = 100
-
 serviceFee :: Int
 serviceFee = 2
+
+toDbl :: (Real a) => a -> Double
+toDbl = realToFrac
+
+baseDepositLimit :: Centi
+baseDepositLimit = 100
+
+quoteLimit :: Centi
+quoteLimit = 100
 
 instance Buildable (MarkupM a) where
 	build = renderHtmlBuilder . fmap (const ())
@@ -32,10 +39,10 @@ instance Buildable URI where
 
 instance ToRow Deposit where
 	toRow (Deposit rid fn email tel ripple amnt complete) =
-		[toField rid, toField fn, toField (show email), toField tel, toField (show ripple), toField amnt, toField complete]
+		[toField rid, toField fn, toField (show email), toField tel, toField (show ripple), toField (toDbl amnt), toField complete]
 
 instance FromRow Deposit where
-	fromRow = Deposit <$> field <*> field <*> fieldWith emailF <*> field <*> fieldWith rippleF <*> field <*> field
+	fromRow = Deposit <$> field <*> field <*> fieldWith emailF <*> field <*> fieldWith rippleF <*> fieldWith dbl <*> field
 		where
 		emailF f = case fieldData f of
 			(SQLText t) -> case validate (encodeUtf8 t) of
@@ -49,9 +56,14 @@ instance FromRow Deposit where
 				Just ripple -> Ok ripple
 			_ -> Errors [toException $ ConversionFailed "TEXT" "RippleAddress" "need a text"]
 
+		dbl f = case fieldData f of
+			SQLInteger i -> Ok $ fromIntegral i
+			SQLFloat d -> Ok $ realToFrac d
+			_ -> Errors []
+
 instance ToRow Quote where
 	toRow (Quote qid typ amnt dest email q a msg complete) =
-		[toField qid, toField typ, toField amnt, toField (show dest), toField (show email), toField q, toField a, toField msg, toField complete]
+		[toField qid, toField typ, toField (toDbl amnt), toField (show dest), toField (show email), toField q, toField a, toField msg, toField complete]
 
 instance (CanVerify a) => ToRow (Verification a) where
 	toRow (Verification item typ notes token) = [
@@ -81,7 +93,9 @@ instance Eq Form where
 
 data Home = Home {
 		renderedDepositForm :: [Form],
-		renderedQuoteForm   :: [Form]
+		renderedQuoteForm   :: [Form],
+		depositLimit        :: Centi,
+		foundDepositLimit   :: Bool
 	}
 
 data Form = Form {
@@ -102,7 +116,7 @@ data Deposit = Deposit {
 		depositorEmail  :: EmailAddress,
 		depositorTel    :: Text,
 		depositorRipple :: RippleAddress,
-		depositAmount   :: Double,
+		depositAmount   :: Centi,
 		depositComplete :: Bool
 	}
 
@@ -126,7 +140,7 @@ data QuoteType = InteracETransferQuote
 data Quote = Quote {
 		quoteId          :: Word32, -- Because destination tag
 		quoteType        :: QuoteType,
-		quoteAmount      :: Double,
+		quoteAmount      :: Centi,
 		quoteDestination :: EmailAddress,
 		quotorEmail      :: EmailAddress,
 		quoteQuestion    :: Text,

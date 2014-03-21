@@ -3,6 +3,7 @@ module Application (home, processDeposit, plivoDeposit, verifyDeposit, stripeVer
 
 import Prelude ()
 import BasicPrelude
+import Data.Fixed (Centi)
 import Data.Char (isDigit, isAlphaNum)
 import System.Random (randomRIO)
 import Control.Error (eitherT, EitherT(..), fmapLT, throwT)
@@ -13,7 +14,8 @@ import qualified Data.ByteString.Lazy as LZ
 
 import Network.Wai (Application)
 import Network.HTTP.Types (ok200, badRequest400)
-import Network.Wai.Util (stringHeaders, textBuilder, string)
+import Network.Wai.Util (stringHeaders, textBuilder, string, queryLookup, noStoreFileUploads)
+import Network.Wai.Parse (parseRequestBody)
 
 import Network.Wai.Digestive (bodyFormEnv_)
 import SimpleForm.Combined (input_html, label, Label(..), wdef, vdef, ShowRead(..), unShowRead)
@@ -62,15 +64,18 @@ digits10 = SFV.pmap (go . T.filter isDigit) vdef
 		| T.length t == 11 && T.head t == '1' = Just t
 		| otherwise = Nothing
 
-amountLimit :: SFV.Validation Double
-amountLimit = SFV.pmap go vdef
+getServiceLimit :: (MonadIO m) => Text -> m Centi
+getServiceLimit _ = return 100
+
+amountLimit :: Centi -> SFV.Validation Centi
+amountLimit serviceLimit = SFV.pmap go vdef
 	where
 	go amnt
-		| amnt <= fromIntegral serviceLimit = Just amnt
+		| amnt <= serviceLimit = Just amnt
 		| otherwise = Nothing
 
-depositForm :: (Functor m, MonadIO m) => SimpleForm' m Deposit
-depositForm = do
+depositForm :: (Functor m, MonadIO m) => Centi -> SimpleForm' m Deposit
+depositForm lim = do
 	fn'     <- input (s"fn") (Just . depositorFN) (wdef,vdef)
 		(mempty { label = lbl"Full name"})
 	email'  <- input_ (s"email") (Just . depositorEmail)
@@ -78,7 +83,7 @@ depositForm = do
 		(mempty {label = lbl"Telephone number"})
 	ripple' <- input  (s"ripple") (Just . ShowRead . depositorRipple) (wdef,vdef)
 		(mempty {label = lbl"Ripple address"})
-	amount' <- input (s"amount") (Just . depositAmount) (wdef,amountLimit)
+	amount' <- input (s"amount") (Just . depositAmount) (wdef,amountLimit lim)
 		(mempty {label = lbl"Amount in CAD"})
 
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (100000,999999)
@@ -90,7 +95,7 @@ quoteForm = do
 		(mempty {label = lbl"Destination Email"})
 	email'       <- input (s"email") (Just . quotorEmail) (wdef,vdef)
 		(mempty {label = lbl"Your Email"})
-	amount'      <- input (s"amount") (Just . quoteAmount) (wdef,amountLimit)
+	amount'      <- input (s"amount") (Just . quoteAmount) (wdef,amountLimit quoteLimit)
 		(mempty {label = lbl"Amount in CAD"})
 	question'    <- input_ (s"question") (Just . quoteQuestion)
 	answer'      <- input (s"answer") (Just . quoteAnswer) (password,vdef)
@@ -141,10 +146,11 @@ stripeVerifyForm = do
 
 home :: Action Application
 home root _ _ _ _ = do
-	dForm <- getSimpleForm render Nothing depositForm
+	-- TODO: get current limit from tel in cookie
+	dForm <- getSimpleForm render Nothing (depositForm 100)
 	qForm <- getSimpleForm render Nothing quoteForm
 	textBuilder ok200 headers $
-		viewHome htmlEscape (Home [Form dForm dPath] [Form qForm qPath])
+		viewHome htmlEscape (Home [Form dForm dPath] [Form qForm qPath] 0 False)
 	where
 	dPath = processDepositPath `relativeTo` root
 	qPath = processQuotePath `relativeTo` root
@@ -152,7 +158,16 @@ home root _ _ _ _ = do
 
 processDeposit :: Action Application
 processDeposit root db plivo _ req = do
-	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) depositForm
+	tel <- fmap (parseTel <=< queryLookup "tel" . fst)
+		(parseRequestBody noStoreFileUploads req)
+	pastAmount <- liftIO $ query db
+		(s"SELECT TOTAL(amount) FROM deposits WHERE complete=1 AND tel=?") [tel]
+	let limit = case pastAmount of
+		[[pastAmountSum]] -> baseDepositLimit +
+			(fromIntegral $ floor (pastAmountSum / 10::Double))
+		_ -> baseDepositLimit
+
+	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) (depositForm limit)
 	liftIO $ case dep of
 		Just x -> do
 			finalId <- depositId <$>
@@ -166,13 +181,14 @@ processDeposit root db plivo _ req = do
 				Right _ -> do
 					vForm <- getSimpleForm render Nothing plivoDepositForm
 					textBuilder ok200 headers $ viewDepositVerify htmlEscape
-						(Home [Form vForm vPath] [])
+						(Home [Form vForm vPath] [] limit True)
 				Left _ ->
 					textBuilder badRequest400 headers $ viewHome htmlEscape
-						(Home [Form (preEscapedToMarkup "<p class='error'>Something went wrong trying to verify your telephone number: did you enter it correctly?</p>" ++ rForm) fPath] [])
+						(Home [Form (preEscapedToMarkup "<p class='error'>Something went wrong trying to verify your telephone number: did you enter it correctly?</p>" ++ rForm) fPath] [] limit True)
 		Nothing -> textBuilder badRequest400 headers $
-			viewHome htmlEscape (Home [Form rForm fPath] [])
+			viewHome htmlEscape (Home [Form rForm fPath] [] limit True)
 	where
+	parseTel s = let SFV.Check d10 = digits10 in d10 [s]
 	vPath = verifyDepositPath `relativeTo` root
 	fPath = processDepositPath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
@@ -208,7 +224,7 @@ verifyDeposit root db _ _ req = do
 					(DepositSuccess [x] (v < (1::Int)) [Form stripeF svPath] hPath)
 			[] ->
 				textBuilder badRequest400 headers $ viewDepositVerify htmlEscape
-					(Home [Form (preEscapedToMarkup "<p class='error'>Invalid code</p>" ++ vForm) vPath] [])
+					(Home [Form (preEscapedToMarkup "<p class='error'>Invalid code</p>" ++ vForm) vPath] [] 0 False)
 	where
 	svPath = stripeVerifyDepositPath `relativeTo` root
 	vPath = verifyDepositPath `relativeTo` root
@@ -270,7 +286,7 @@ processQuote root db _ _ req = do
 			textBuilder ok200 headers $ viewQuoteSuccess htmlEscape
 				(QuoteSuccess [finalQuote {quoteAmount = quoteAmount finalQuote + fromIntegral serviceFee}] hPath)
 		Nothing -> textBuilder ok200 headers $
-			viewHome htmlEscape (Home [] [Form qForm qPath])
+			viewHome htmlEscape (Home [] [Form qForm qPath] 0 False)
 	where
 	qPath = processQuotePath `relativeTo` root
 	hPath = homePath `relativeTo` root
