@@ -9,6 +9,7 @@ import System.Random (randomRIO)
 import Control.Error (eitherT, EitherT(..), fmapLT, throwT)
 import Data.Digest.Pure.MD5 (md5, MD5Digest)
 import Database.SQLite3 (SQLError(..), Error(ErrorConstraint))
+import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as LZ
 

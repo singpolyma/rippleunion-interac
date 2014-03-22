@@ -3,6 +3,8 @@ module Records where
 import Prelude ()
 import BasicPrelude
 import Data.Fixed (Centi)
+import Control.Error (readMay)
+import Data.Text.Encoding (encodeUtf8)
 
 import Text.Blaze.Html (Html)
 import Text.Blaze.Internal (MarkupM)
@@ -51,7 +53,7 @@ instance FromRow Deposit where
 			_ -> Errors [toException $ ConversionFailed "TEXT" "EmailAddress" "need a text"]
 
 		rippleF f = case fieldData f of
-			(SQLText t) -> case readMay t of
+			(SQLText t) -> case readMay (textToString t) of
 				Nothing -> Errors [toException $ ConversionFailed "TEXT" "RippleAddress" "invalid"]
 				Just ripple -> Ok ripple
 			_ -> Errors [toException $ ConversionFailed "TEXT" "RippleAddress" "need a text"]
