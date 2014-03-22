@@ -21,6 +21,9 @@ import Database.SQLite.Simple.FromField (fieldData, ResultError(ConversionFailed
 import Database.SQLite.Simple.Ok (Ok(Ok, Errors))
 import Text.Blaze.Html.Renderer.Text (renderHtmlBuilder)
 
+s :: (IsString s) => String -> s
+s = fromString
+
 serviceFee :: Int
 serviceFee = 2
 
@@ -28,7 +31,10 @@ toDbl :: (Real a) => a -> Double
 toDbl = realToFrac
 
 baseDepositLimit :: Centi
-baseDepositLimit = 100
+baseDepositLimit = 150
+
+depositMaxLimit :: Centi
+depositMaxLimit = 700
 
 quoteLimit :: Centi
 quoteLimit = 100

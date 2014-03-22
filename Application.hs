@@ -13,18 +13,21 @@ import Data.Text.Encoding (encodeUtf8)
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as LZ
 
-import Network.Wai (Application)
+import Network.Wai (Application, vault)
 import Network.HTTP.Types (ok200, badRequest400)
-import Network.Wai.Util (stringHeaders, textBuilder, string, queryLookup, noStoreFileUploads)
-import Network.Wai.Parse (parseRequestBody)
+import Network.Wai.Util (stringHeaders, textBuilder, string)
+import Control.Monad.Trans.Resource (ResourceT)
+import Network.Wai.Session (Session)
+import qualified Data.Vault as Vault
 
 import Network.Wai.Digestive (bodyFormEnv_)
-import SimpleForm.Combined (input_html, label, Label(..), wdef, vdef, ShowRead(..), unShowRead)
+import SimpleForm.Combined (input_html, required, label, Label(..), wdef, vdef, ShowRead(..), unShowRead)
+import SimpleForm.Render (Renderer, errors)
 import SimpleForm.Render.XHTML5 (render)
 import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm, fieldset)
 import SimpleForm (tel, password, textarea, hidden)
 import qualified SimpleForm.Validation as SFV
-import Text.Digestive.Form (monadic)
+import Text.Digestive (monadic, FormInput(TextInput))
 import Text.Blaze (preEscapedToMarkup)
 
 import Plivo (callAPI, createOutboundCall)
@@ -40,10 +43,7 @@ import Records
 import MustacheTemplates
 #include "PathHelpers.hs"
 
-type Action a = URI -> Connection -> PlivoConfig -> StripeConfig -> a
-
-s :: (IsString s) => String -> s
-s = fromString
+type Action a = URI -> Connection -> Vault.Key (Session (ResourceT IO) String String) -> PlivoConfig -> StripeConfig -> a
 
 htmlEscape :: String -> String
 htmlEscape = concatMap escChar
@@ -65,8 +65,17 @@ digits10 = SFV.pmap (go . T.filter isDigit) vdef
 		| T.length t == 11 && T.head t == '1' = Just t
 		| otherwise = Nothing
 
-getServiceLimit :: (MonadIO m) => Text -> m Centi
-getServiceLimit _ = return 100
+parseTel :: Text -> Maybe Text
+parseTel s = let SFV.Check d10 = digits10 in d10 [s]
+
+getDepositLimit :: (MonadIO m) => Connection -> Maybe Text -> m (Centi, Bool)
+getDepositLimit db tel = do
+	pastAmount <- liftIO $ query db
+		(s"SELECT SUM(amount) FROM deposits WHERE complete=1 AND tel=?") [tel]
+	return $ case pastAmount of
+		[[Just pastAmountSum]] -> (min depositMaxLimit $ baseDepositLimit +
+			(fromIntegral $ (floor (pastAmountSum / 10::Double) :: Int)), True)
+		_ -> (baseDepositLimit, False)
 
 amountLimit :: Centi -> SFV.Validation Centi
 amountLimit serviceLimit = SFV.pmap go vdef
@@ -107,11 +116,12 @@ quoteForm = do
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (200000000,maxBound)
 	return $ Quote <$> rid <*> pure InteracETransferQuote <*> amount' <*> destination' <*> email' <*> question' <*> answer' <*> message' <*> pure False
 
-plivoDepositForm :: (Monad m) => SimpleForm' m PlivoDeposit
+plivoDepositForm :: (Monad m) => SimpleForm' m (String, Bool)
 plivoDepositForm = do
-	code' <- input (s"code") (Just . plivoCode) (wdef,vdef) (mempty { label = lbl"Verification code"})
+	code' <- input (s"code") (Just . fst) (wdef,vdef) (mempty { label = lbl"Verification code"})
+	remember' <- input (s"remember_me") (Just . snd) (wdef,vdef) (mempty { label = Just $ InlineLabel $ s"Remember your phone number?", required = False})
 
-	return $ PlivoDeposit <$> code'
+	return $ (,) <$> code' <*> remember'
 
 -- TODO: verify postal code better
 -- TODO: verify ranges on month and year
@@ -145,30 +155,38 @@ stripeVerifyForm = do
 			fmap Just postal <*> pure Nothing <*> pure Nothing
 		))
 
+renderWithoutErrors :: Renderer
+renderWithoutErrors opt = render $ opt { errors = [] }
+
 home :: Action Application
-home root _ _ _ _ = do
-	-- TODO: get current limit from tel in cookie
-	dForm <- getSimpleForm render Nothing (depositForm 100)
+home root db session _ _ req = do
+	tel <- fmap (parseTel . T.pack =<<) (sessionLookup "tel")
+	(lim, found) <- getDepositLimit db tel
+
+	(dForm, _) <- postSimpleForm renderWithoutErrors
+		(return $ \pth -> case pth of
+			[_,k] | k == s"tel" -> return [TextInput $ fromMaybe (s"") tel]
+			_ -> return []
+		) (depositForm lim)
+	--dForm <- getSimpleForm render Nothing (depositForm lim)
 	qForm <- getSimpleForm render Nothing quoteForm
 	textBuilder ok200 headers $
-		viewHome htmlEscape (Home [Form dForm dPath] [Form qForm qPath] 0 False)
+		viewHome htmlEscape (Home [Form dForm dPath] [Form qForm qPath] lim found)
 	where
 	dPath = processDepositPath `relativeTo` root
 	qPath = processQuotePath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
+	Just (sessionLookup, _) = Vault.lookup session (vault req)
 
 processDeposit :: Action Application
-processDeposit root db plivo _ req = do
-	tel <- fmap (parseTel <=< queryLookup "tel" . fst)
-		(parseRequestBody noStoreFileUploads req)
-	pastAmount <- liftIO $ query db
-		(s"SELECT TOTAL(amount) FROM deposits WHERE complete=1 AND tel=?") [tel]
-	let limit = case pastAmount of
-		[[pastAmountSum]] -> baseDepositLimit +
-			(fromIntegral $ floor (pastAmountSum / 10::Double))
-		_ -> baseDepositLimit
+processDeposit root db session plivo _ req = do
+	tel <- fmap (parseTel . T.pack =<<) (sessionLookup "tel")
+	(lim, found) <- getDepositLimit db tel
+	-- If they change tel and go over what should be the limit, we can catch that
+	-- manually.  Will be fine if they didn't leave the session on a
+	-- publicly-accessible machine anyway.
 
-	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) (depositForm limit)
+	(rForm, dep) <- postSimpleForm render (bodyFormEnv_ req) (depositForm lim)
 	liftIO $ case dep of
 		Just x -> do
 			finalId <- depositId <$>
@@ -180,60 +198,69 @@ processDeposit root db plivo _ req = do
 
 			case apiResult of
 				Right _ -> do
-					vForm <- getSimpleForm render Nothing plivoDepositForm
+					vForm <- getSimpleForm render (Just ("", True)) plivoDepositForm
 					textBuilder ok200 headers $ viewDepositVerify htmlEscape
-						(Home [Form vForm vPath] [] limit True)
+						(Home [Form vForm vPath] [] lim found)
 				Left _ ->
 					textBuilder badRequest400 headers $ viewHome htmlEscape
-						(Home [Form (preEscapedToMarkup "<p class='error'>Something went wrong trying to verify your telephone number: did you enter it correctly?</p>" ++ rForm) fPath] [] limit True)
+						(Home [Form (preEscapedToMarkup "<p class='error'>Something went wrong trying to verify your telephone number: did you enter it correctly?</p>" ++ rForm) fPath] [] lim found)
 		Nothing -> textBuilder badRequest400 headers $
-			viewHome htmlEscape (Home [Form rForm fPath] [] limit True)
+			viewHome htmlEscape (Home [Form rForm fPath] [] lim found)
 	where
-	parseTel s = let SFV.Check d10 = digits10 in d10 [s]
 	vPath = verifyDepositPath `relativeTo` root
 	fPath = processDepositPath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
+	Just (sessionLookup, _) = Vault.lookup session (vault req)
 
 verifyDeposit :: Action Application
-verifyDeposit root db _ _ req = do
+verifyDeposit root db session _ _ req = do
 	(vForm, dep) <- postSimpleForm render (bodyFormEnv_ req) plivoDepositForm
-	liftIO $ do
-		deps <- maybe (return [])
-			(query db (s"SELECT id,fn,email,tel,ripple,amount,complete FROM deposits WHERE id=? AND complete=0"))
-				(fmap ((:[]) . plivoCode) dep)
-		case deps of
-			(x:_) -> do
-				execute db (s"INSERT INTO verifications (item_id,item_table,verification_type,notes,addr_token) VALUES (?,?,?,?,?)")
-					(Verification x AutomatedPhoneVerification Nothing Nothing)
 
-				-- Check if there's already a higher verification associated
-				-- with this phone number
-				v <- fmap (head.head) $ query db (s $ concat [
-						"SELECT ",
-							"count(1) ",
-						"FROM ",
-							"deposits LEFT JOIN verifications ",
-								"ON verifications.item_table='deposits' ",
-								"AND verifications.item_id=deposits.id ",
-						"WHERE ",
-						"deposits.tel=? AND verifications.verification_type IN (?,?)"
-					])
-					(depositorTel x, ManualPhoneVerification, StripeVerification)
+	(deps, remember) <- liftIO $ case dep of
+		Just (code, remember) -> do
+			deps <- query db (s"SELECT id,fn,email,tel,ripple,amount,complete FROM deposits WHERE id=? AND complete=0") [code]
+			return (deps, remember)
+		_ -> return ([], False)
 
-				stripeF <- getSimpleForm render (Just (depositId x, Nothing)) stripeVerifyForm
-				textBuilder ok200 headers $ viewDepositSuccess htmlEscape
-					(DepositSuccess [x] (v < (1::Int)) [Form stripeF svPath] hPath)
-			[] ->
-				textBuilder badRequest400 headers $ viewDepositVerify htmlEscape
-					(Home [Form (preEscapedToMarkup "<p class='error'>Invalid code</p>" ++ vForm) vPath] [] 0 False)
+	case deps of
+		(x:_) -> do
+			liftIO $ execute db (s"INSERT INTO verifications (item_id,item_table,verification_type,notes,addr_token) VALUES (?,?,?,?,?)")
+				(Verification x AutomatedPhoneVerification Nothing Nothing)
+
+			if remember then
+					sessionInsert "tel" (textToString $ depositorTel x)
+				else
+					sessionInsert "tel" "" -- Clear the session to not remember
+
+			-- Check if there's already a higher verification associated
+			-- with this phone number
+			v <- liftIO $ fmap (head.head) $ query db (s $ concat [
+					"SELECT ",
+						"count(1) ",
+					"FROM ",
+						"deposits LEFT JOIN verifications ",
+							"ON verifications.item_table='deposits' ",
+							"AND verifications.item_id=deposits.id ",
+					"WHERE ",
+					"deposits.tel=? AND verifications.verification_type IN (?,?)"
+				])
+				(depositorTel x, ManualPhoneVerification, StripeVerification)
+
+			stripeF <- getSimpleForm render (Just (depositId x, Nothing)) stripeVerifyForm
+			textBuilder ok200 headers $ viewDepositSuccess htmlEscape
+				(DepositSuccess [x] (v < (1::Int)) [Form stripeF svPath] hPath)
+		[] ->
+			textBuilder badRequest400 headers $ viewDepositVerify htmlEscape
+				(Home [Form (preEscapedToMarkup "<p class='error'>Invalid code</p>" ++ vForm) vPath] [] 0 False)
 	where
 	svPath = stripeVerifyDepositPath `relativeTo` root
 	vPath = verifyDepositPath `relativeTo` root
 	hPath = homePath `relativeTo` root
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
+	Just (_, sessionInsert) = Vault.lookup session (vault req)
 
 stripeVerifyDeposit :: Action Application
-stripeVerifyDeposit root db _ stripe req = do
+stripeVerifyDeposit root db _ _ stripe req = do
 	(stripeF, r) <- postSimpleForm render (bodyFormEnv_ req) stripeVerifyForm
 	deps <- liftIO $ query db (s"SELECT id,fn,email,tel,ripple,amount,complete FROM deposits WHERE id=? LIMIT 1") [maybe 0 fst r]
 	case (deps, r) of
@@ -270,14 +297,14 @@ stripeVerifyDeposit root db _ stripe req = do
 	Just headers = stringHeaders [("Content-Type", "text/html; charset=utf-8")]
 
 plivoDeposit :: Action (Int64 -> Application)
-plivoDeposit _ _ _ _ rid _ =
+plivoDeposit _ _ _ _ _ rid _ =
 	textBuilder ok200 headers $ viewPlivoDeposit htmlEscape (PlivoDeposit code)
 	where
 	code = intersperse ' ' $ shows rid ""
 	Just headers = stringHeaders [("Content-Type", "application/xml; charset=utf-8")]
 
 processQuote :: Action Application
-processQuote root db _ _ req = do
+processQuote root db _ _ _ req = do
 	(qForm, quote) <- postSimpleForm render (bodyFormEnv_ req) quoteForm
 	liftIO $ case quote of
 		Just q -> do
