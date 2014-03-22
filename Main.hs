@@ -34,7 +34,7 @@ import Routes
 
 scookie :: URI -> SetCookie
 scookie (URI {uriAuthority = Just (URIAuth {uriRegName = domain})}) = def {
-		setCookieDomain = Just $ T.encodeUtf8 $ T.pack ('.':domain),
+		setCookieDomain = Just $ T.encodeUtf8 $ T.pack ".rippleunion.com",
 		setCookiePath = Just $ T.encodeUtf8 $ T.singleton '/',
 		setCookieExpires = Just $ UTCTime (ModifiedJulianDay 100000) 0,
 		setCookieSecure = True
