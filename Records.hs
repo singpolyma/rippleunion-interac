@@ -34,7 +34,7 @@ baseDepositLimit :: Centi
 baseDepositLimit = 150
 
 depositMaxLimit :: Centi
-depositMaxLimit = 700
+depositMaxLimit = 900
 
 quoteLimit :: Centi
 quoteLimit = 100

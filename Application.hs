@@ -74,7 +74,7 @@ getDepositLimit db tel = do
 		(s"SELECT SUM(amount) FROM deposits WHERE complete=1 AND tel=?") [tel]
 	return $ case pastAmount of
 		[[Just pastAmountSum]] -> (min depositMaxLimit $ baseDepositLimit +
-			(fromIntegral $ (floor (pastAmountSum / 10::Double) :: Int)), True)
+			(fromIntegral $ (floor (pastAmountSum / 5::Double) :: Int)), True)
 		_ -> (baseDepositLimit, False)
 
 amountLimit :: Centi -> SFV.Validation Centi
