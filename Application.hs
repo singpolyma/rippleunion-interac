@@ -6,10 +6,12 @@ import BasicPrelude
 import Data.Fixed (Centi)
 import Data.Char (isDigit, isAlphaNum)
 import System.Random (randomRIO)
-import Control.Error (eitherT, EitherT(..), fmapLT, throwT)
+import Control.Error (eitherT, EitherT(..), fmapLT, throwT, readMay)
 import Data.Digest.Pure.MD5 (md5, MD5Digest)
 import Database.SQLite3 (SQLError(..), Error(ErrorConstraint))
 import Data.Text.Encoding (encodeUtf8)
+import Data.Base58Address (RippleAddress)
+import qualified Ripple.Federation as Federation
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as LZ
 
@@ -25,10 +27,11 @@ import SimpleForm.Combined (input_html, required, label, Label(..), wdef, vdef, 
 import SimpleForm.Render (Renderer, errors)
 import SimpleForm.Render.XHTML5 (render)
 import SimpleForm.Digestive.Combined (SimpleForm', input, input_, getSimpleForm, postSimpleForm, fieldset)
+import SimpleForm.Digestive.Validation (underRef)
 import SimpleForm (tel, password, textarea, hidden)
 import qualified SimpleForm.Validation as SFV
-import Text.Digestive (monadic, FormInput(TextInput))
-import Text.Blaze (preEscapedToMarkup)
+import Text.Digestive (monadic, FormInput(TextInput), validateM, Result(Success, Error))
+import Text.Blaze (preEscapedToMarkup, toMarkup)
 
 import Plivo (callAPI, createOutboundCall)
 
@@ -91,13 +94,26 @@ depositForm lim = do
 	email'  <- input_ (s"email") (Just . depositorEmail)
 	tel'    <- input  (s"tel") (Just . depositorTel) (tel,digits10)
 		(mempty {label = lbl"Telephone number"})
-	ripple' <- input  (s"ripple") (Just . ShowRead . depositorRipple) (wdef,vdef)
+	ripple' <- input  (s"ripple") (Just . show . depositorRipple) (wdef,vdef)
 		(mempty {label = lbl"Ripple address"})
 	amount' <- input (s"amount") (Just . depositAmount) (wdef,amountLimit lim)
 		(mempty {label = lbl"Amount in CAD"})
 
 	let rid = monadic $ fmap pure $ liftIO $ randomRIO (100000,999999)
-	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> fmap unShowRead ripple' <*> amount' <*> pure False
+	return $ Deposit <$> rid <*> fn' <*> email' <*> tel' <*> underRef (validateM maybeResolve) ripple' <*> amount' <*> pure False
+	where
+	maybeResolve adr = case readMay (T.unpack adr) of
+		Just r -> return (Success r)
+		_ -> case (T.unpack adr, readMay (T.unpack adr)) of
+			(_, Just alias) -> do
+				v <- liftIO $ Federation.resolve alias
+				case v of
+					Left (Federation.Error _ msg) -> return $ Error $ toMarkup msg
+					Right (Federation.ResolvedAlias _ r Nothing) -> return $ Success r
+					Right (Federation.ResolvedAlias _ r _) ->
+						return $ Error $ toMarkup "Destination tags not supported yet"
+			('~':rippleName, _) -> maybeResolve (T.pack $ rippleName ++ "@ripple.com")
+			(rippleName, _) -> maybeResolve (T.pack $ rippleName ++ "@ripple.com")
 
 quoteForm :: (Functor m, MonadIO m) => SimpleForm' m Quote
 quoteForm = do
